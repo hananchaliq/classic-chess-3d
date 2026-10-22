@@ -1,5 +1,8 @@
 import { Chess } from 'chess.js';
 import crypto from 'crypto';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import type {
   CaptureDuelEvent,
   ChatMessageItem,
@@ -61,6 +64,7 @@ interface InternalRoomState {
 
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ABANDON_TIMEOUT_MS = 90 * 1000; // 90s grace period for reconnecting
+const TMP_STORE_PATH = path.join(os.tmpdir(), 'classic_chess_3d_rooms_v1.json');
 
 export class GameRoomManager {
   private rooms = new Map<string, InternalRoomState>();
@@ -216,6 +220,7 @@ export class GameRoomManager {
     preferredColor: 'w' | 'b' | 'random';
     visibility?: RoomVisibility;
   }): RoomJoinedResponse {
+    this.hydrateFromTmpIfNeeded();
     const preset = TIME_CONTROL_PRESETS[params.timeControl] || TIME_CONTROL_PRESETS['5+0'];
     const roomCode = this.generateRoomCode();
     const assignedColor: PieceColor =
@@ -281,6 +286,7 @@ export class GameRoomManager {
       roomCode,
       sessionToken: params.sessionToken,
     });
+    this.persistToTmp();
 
     return {
       ok: true,
@@ -296,6 +302,7 @@ export class GameRoomManager {
     roomCode: string;
     playerName: string;
   }): RoomJoinedResponse & { reconnected?: boolean; autoStarted?: boolean } {
+    this.hydrateFromTmpIfNeeded();
     const normalizedCode = params.roomCode.trim().toUpperCase();
     const room = this.rooms.get(normalizedCode);
 
@@ -324,6 +331,7 @@ export class GameRoomManager {
         roomCode: normalizedCode,
         sessionToken: params.sessionToken,
       });
+      this.persistToTmp();
       return {
         ok: true,
         room: this.toSnapshot(room),
@@ -347,6 +355,7 @@ export class GameRoomManager {
         roomCode: normalizedCode,
         sessionToken: params.sessionToken,
       });
+      this.persistToTmp();
       return {
         ok: true,
         room: this.toSnapshot(room),
@@ -391,6 +400,7 @@ export class GameRoomManager {
         roomCode: normalizedCode,
         sessionToken: params.sessionToken,
       });
+      this.persistToTmp();
 
       return {
         ok: true,
@@ -406,6 +416,7 @@ export class GameRoomManager {
       roomCode: normalizedCode,
       sessionToken: params.sessionToken,
     });
+    this.persistToTmp();
 
     return {
       ok: true,
@@ -419,6 +430,7 @@ export class GameRoomManager {
     roomCode: string;
     sessionToken: string;
   }): { ok: boolean; error?: string; started?: boolean; room?: RoomStateSnapshot } {
+    this.hydrateFromTmpIfNeeded();
     const room = this.rooms.get(params.roomCode.toUpperCase());
     if (!room) {
       return { ok: false, error: 'Room tidak ditemukan.' };
@@ -455,6 +467,7 @@ export class GameRoomManager {
       );
     }
 
+    this.persistToTmp();
     return {
       ok: true,
       started,
@@ -476,6 +489,7 @@ export class GameRoomManager {
     move?: MoveRecord;
     gameFinished?: boolean;
   } {
+    this.hydrateFromTmpIfNeeded();
     const room = this.rooms.get(params.roomCode.toUpperCase());
     if (!room) {
       return { ok: false, error: 'Room tidak ditemukan.' };
@@ -488,6 +502,7 @@ export class GameRoomManager {
     // Update server clock first; check if active player ran out of time
     const timedOut = this.updateLiveClocks(room);
     if (timedOut) {
+      this.persistToTmp();
       return {
         ok: false,
         error: 'Waktu habis sebelum langkah diterima.',
@@ -606,6 +621,7 @@ export class GameRoomManager {
       );
     }
 
+    this.persistToTmp();
     return {
       ok: true,
       room: this.toSnapshot(room),
@@ -618,6 +634,7 @@ export class GameRoomManager {
     roomCode: string;
     sessionToken: string;
   }): { ok: boolean; error?: string; room?: RoomStateSnapshot } {
+    this.hydrateFromTmpIfNeeded();
     const room = this.rooms.get(params.roomCode.toUpperCase());
     if (!room || room.status !== 'active') {
       return { ok: false, error: 'Pertandingan tidak aktif.' };
@@ -639,6 +656,7 @@ export class GameRoomManager {
 
     room.drawOfferBy = color;
     this.addSystemMessage(room, `${playerName} menawarkan remis (Draw).`);
+    this.persistToTmp();
     return { ok: true, room: this.toSnapshot(room) };
   }
 
@@ -647,6 +665,7 @@ export class GameRoomManager {
     sessionToken: string;
     accept: boolean;
   }): { ok: boolean; error?: string; room?: RoomStateSnapshot; gameFinished?: boolean } {
+    this.hydrateFromTmpIfNeeded();
     const room = this.rooms.get(params.roomCode.toUpperCase());
     if (!room || room.status !== 'active' || !room.drawOfferBy) {
       return { ok: false, error: 'Tidak ada tawaran remis yang aktif.' };
@@ -674,10 +693,12 @@ export class GameRoomManager {
         'draw_agreement',
         `Remis disepakati oleh kedua pemain (${responderName} menerima tawaran).`
       );
+      this.persistToTmp();
       return { ok: true, room: this.toSnapshot(room), gameFinished: true };
     } else {
       room.drawOfferBy = null;
       this.addSystemMessage(room, `${responderName} menolak tawaran remis.`);
+      this.persistToTmp();
       return { ok: true, room: this.toSnapshot(room), gameFinished: false };
     }
   }
@@ -686,6 +707,7 @@ export class GameRoomManager {
     roomCode: string;
     sessionToken: string;
   }): { ok: boolean; error?: string; room?: RoomStateSnapshot; gameFinished?: boolean } {
+    this.hydrateFromTmpIfNeeded();
     const room = this.rooms.get(params.roomCode.toUpperCase());
     if (!room || room.status !== 'active') {
       return { ok: false, error: 'Pertandingan tidak aktif.' };
@@ -707,6 +729,7 @@ export class GameRoomManager {
         'threefold_repetition',
         'Pertandingan berakhir remis melalui klaim Pengulangan Tiga Kali (Threefold Repetition).'
       );
+      this.persistToTmp();
       return { ok: true, room: this.toSnapshot(room), gameFinished: true };
     }
 
@@ -718,6 +741,7 @@ export class GameRoomManager {
         'fifty_move_rule',
         'Pertandingan berakhir remis melalui klaim Aturan 50 Langkah.'
       );
+      this.persistToTmp();
       return { ok: true, room: this.toSnapshot(room), gameFinished: true };
     }
 
@@ -731,6 +755,7 @@ export class GameRoomManager {
     roomCode: string;
     sessionToken: string;
   }): { ok: boolean; error?: string; room?: RoomStateSnapshot; gameFinished?: boolean } {
+    this.hydrateFromTmpIfNeeded();
     const room = this.rooms.get(params.roomCode.toUpperCase());
     if (!room || room.status !== 'active') {
       return { ok: false, error: 'Pertandingan tidak aktif.' };
@@ -763,6 +788,7 @@ export class GameRoomManager {
       } menang!`
     );
 
+    this.persistToTmp();
     return { ok: true, room: this.toSnapshot(room), gameFinished: true };
   }
 
@@ -770,6 +796,7 @@ export class GameRoomManager {
     roomCode: string;
     sessionToken: string;
   }): { ok: boolean; error?: string; room?: RoomStateSnapshot } {
+    this.hydrateFromTmpIfNeeded();
     const room = this.rooms.get(params.roomCode.toUpperCase());
     if (!room) {
       return { ok: false, error: 'Room tidak ditemukan.' };
@@ -813,6 +840,7 @@ export class GameRoomManager {
     room.status = room.whiteSeat && room.blackSeat ? 'active' : 'waiting';
 
     this.addSystemMessage(room, 'Pertandingan baru dimulai dengan pertukaran warna sisi!');
+    this.persistToTmp();
     return { ok: true, room: this.toSnapshot(room) };
   }
 
@@ -820,6 +848,7 @@ export class GameRoomManager {
     roomCode: string;
     sessionToken: string;
   }): { ok: boolean; error?: string } {
+    this.hydrateFromTmpIfNeeded();
     const code = params.roomCode.toUpperCase();
     const room = this.rooms.get(code);
     if (!room) {
@@ -834,6 +863,7 @@ export class GameRoomManager {
     }
 
     this.rooms.delete(code);
+    this.persistToTmp();
     return { ok: true };
   }
 
@@ -842,6 +872,7 @@ export class GameRoomManager {
     sessionToken: string;
     message: string;
   }): { ok: boolean; error?: string; chatItem?: ChatMessageItem } {
+    this.hydrateFromTmpIfNeeded();
     const room = this.rooms.get(params.roomCode.toUpperCase());
     if (!room) {
       return { ok: false, error: 'Room tidak ditemukan.' };
@@ -892,6 +923,7 @@ export class GameRoomManager {
       room.chatMessages.shift();
     }
 
+    this.persistToTmp();
     return { ok: true, chatItem: item };
   }
 
@@ -1019,6 +1051,149 @@ export class GameRoomManager {
     return updates;
   }
 
+  public pollRoom(params: {
+    roomCode: string;
+    sessionToken: string;
+  }): {
+    ok: boolean;
+    error?: string;
+    room?: RoomStateSnapshot;
+    yourRole?: YourRoleInRoom;
+  } {
+    this.hydrateFromTmpIfNeeded();
+    const code = params.roomCode.trim().toUpperCase();
+    const room = this.rooms.get(code);
+    if (!room) {
+      return { ok: false, error: 'Room tidak ditemukan atau sudah ditutup.' };
+    }
+
+    this.updateLiveClocks(room, Date.now());
+
+    let yourRole: YourRoleInRoom = 'spectator';
+    if (room.whiteSeat?.sessionToken === params.sessionToken) {
+      room.whiteSeat.connected = true;
+      room.whiteSeat.disconnectedAt = null;
+      yourRole = 'w';
+    } else if (room.blackSeat?.sessionToken === params.sessionToken) {
+      room.blackSeat.connected = true;
+      room.blackSeat.disconnectedAt = null;
+      yourRole = 'b';
+    }
+
+    this.persistToTmp();
+    return {
+      ok: true,
+      room: this.toSnapshot(room),
+      yourRole,
+    };
+  }
+
+  public persistToTmp(): void {
+    try {
+      const serialized: Array<Record<string, unknown>> = [];
+      const now = Date.now();
+      for (const room of this.rooms.values()) {
+        // Prune rooms older than 6 hours
+        if (now - room.createdAt > 6 * 3600 * 1000) continue;
+        serialized.push({
+          roomCode: room.roomCode,
+          status: room.status,
+          visibility: room.visibility,
+          timeControl: room.timeControl,
+          fen: room.chess.fen(),
+          pgn: room.chess.pgn(),
+          whiteSeat: room.whiteSeat,
+          blackSeat: room.blackSeat,
+          moveHistory: room.moveHistory,
+          lastMove: room.lastMove,
+          lastCaptureDuel: room.lastCaptureDuel,
+          drawOfferBy: room.drawOfferBy,
+          result: room.result,
+          winnerColor: room.winnerColor,
+          terminationReason: room.terminationReason,
+          whiteMs: room.whiteMs,
+          blackMs: room.blackMs,
+          incrementMs: room.incrementMs,
+          isUnlimited: room.isUnlimited,
+          lastClockUpdateAt: room.lastClockUpdateAt,
+          chatMessages: room.chatMessages,
+          createdAt: room.createdAt,
+          startedAt: room.startedAt,
+          finishedAt: room.finishedAt,
+        });
+      }
+      fs.writeFileSync(TMP_STORE_PATH, JSON.stringify(serialized), 'utf-8');
+    } catch {
+      // Ignore write errors in restricted environments
+    }
+  }
+
+  public hydrateFromTmpIfNeeded(): void {
+    try {
+      if (!fs.existsSync(TMP_STORE_PATH)) return;
+      const raw = fs.readFileSync(TMP_STORE_PATH, 'utf-8');
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Array<Record<string, unknown>>;
+      if (!Array.isArray(parsed)) return;
+
+      for (const item of parsed) {
+        const code = String(item.roomCode || '');
+        if (!code) continue;
+        const existing = this.rooms.get(code);
+        const itemPly = Array.isArray(item.moveHistory) ? item.moveHistory.length : 0;
+        const existingPly = existing ? existing.moveHistory.length : -1;
+
+        if (!existing || itemPly > existingPly || existing.status !== item.status) {
+          const chess = new Chess();
+          try {
+            if (typeof item.pgn === 'string' && item.pgn.trim().length > 0) {
+              chess.loadPgn(item.pgn);
+            } else if (typeof item.fen === 'string') {
+              chess.load(item.fen);
+            }
+          } catch {
+            if (typeof item.fen === 'string') {
+              try {
+                chess.load(item.fen);
+              } catch {
+                // fallback initial
+              }
+            }
+          }
+
+          this.rooms.set(code, {
+            roomCode: code,
+            status: (item.status as RoomStatus) || 'waiting',
+            visibility: (item.visibility as RoomVisibility) || 'public',
+            timeControl: (item.timeControl as TimeControlPreset) || '5+0',
+            chess,
+            whiteSeat: (item.whiteSeat as InternalPlayerSeat | null) || null,
+            blackSeat: (item.blackSeat as InternalPlayerSeat | null) || null,
+            spectatorSockets: existing?.spectatorSockets || new Set(),
+            moveHistory: (item.moveHistory as MoveRecord[]) || [],
+            lastMove: (item.lastMove as { from: string; to: string } | null) || null,
+            lastCaptureDuel: (item.lastCaptureDuel as CaptureDuelEvent | null) || null,
+            drawOfferBy: (item.drawOfferBy as PieceColor | null) || null,
+            result: (item.result as GameResult) || null,
+            winnerColor: (item.winnerColor as PieceColor | null) || null,
+            terminationReason: (item.terminationReason as GameTerminationReason) || null,
+            whiteMs: Number(item.whiteMs ?? 300000),
+            blackMs: Number(item.blackMs ?? 300000),
+            incrementMs: Number(item.incrementMs ?? 0),
+            isUnlimited: Boolean(item.isUnlimited),
+            lastClockUpdateAt: Number(item.lastClockUpdateAt ?? Date.now()),
+            chatMessages: (item.chatMessages as ChatMessageItem[]) || [],
+            createdAt: Number(item.createdAt ?? Date.now()),
+            startedAt: item.startedAt ? Number(item.startedAt) : null,
+            finishedAt: item.finishedAt ? Number(item.finishedAt) : null,
+          });
+        }
+      }
+    } catch {
+      // Ignore read errors
+    }
+  }
+
   public listWaitingRooms(): Array<{
     roomCode: string;
     hostName: string;
@@ -1026,6 +1201,7 @@ export class GameRoomManager {
     timeControl: TimeControlPreset;
     createdAt: number;
   }> {
+    this.hydrateFromTmpIfNeeded();
     const list: Array<{
       roomCode: string;
       hostName: string;
@@ -1053,4 +1229,10 @@ export class GameRoomManager {
   }
 }
 
-export const gameRoomManager = new GameRoomManager();
+const globalForChess = globalThis as unknown as {
+  __classicChessRoomManager?: GameRoomManager;
+};
+
+export const gameRoomManager =
+  globalForChess.__classicChessRoomManager ||
+  (globalForChess.__classicChessRoomManager = new GameRoomManager());

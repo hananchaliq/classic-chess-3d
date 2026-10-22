@@ -189,7 +189,7 @@ export default function ClassicChessApp() {
   } | null>(null);
 
   // =========================================================================
-  // STAGE 2: MULTIPLAYER SOCKET.IO STATE
+  // STAGE 2: MULTIPLAYER HYBRID STATE (Socket.IO + Vercel Serverless API)
   // =========================================================================
   const socketRef = useRef<Socket | null>(null);
   const sessionTokenRef = useRef<string>('');
@@ -213,42 +213,129 @@ export default function ClassicChessApp() {
   const [mpOrientation, setMpOrientation] = useState<PieceColor>('w');
   const [mpErrorBanner, setMpErrorBanner] = useState<string | null>(null);
   const prevMpPlyRef = useRef<number>(0);
+  const prevMpStatusRef = useRef<string>('waiting');
 
-  // Connect Socket.IO on mount and check URL `?room=XXXXXX`
+  const applyIncomingRoomSnapshot = useCallback((roomSnapshot: RoomStateSnapshot) => {
+    setActiveRoom((prev) => {
+      if (prev && prev.status === 'waiting' && roomSnapshot.status === 'active') {
+        playGameBellSound();
+      } else if (
+        prev &&
+        prev.status === 'active' &&
+        (roomSnapshot.status === 'finished' || roomSnapshot.status === 'abandoned')
+      ) {
+        playGameBellSound();
+      }
+      prevMpStatusRef.current = roomSnapshot.status;
+
+      if (roomSnapshot.ply > prevMpPlyRef.current) {
+        const latestMove = roomSnapshot.moveHistory[roomSnapshot.moveHistory.length - 1];
+        if (roomSnapshot.inCheck) {
+          playCheckAlertSound();
+        } else if (latestMove?.promotion) {
+          playPromotionFanfareSound();
+        } else if (latestMove?.captured) {
+          playDuelCombatSound(latestMove.piece);
+        } else {
+          playWoodMoveSound();
+        }
+        prevMpPlyRef.current = roomSnapshot.ply;
+        setSelectedSquare(null);
+        setLegalMoves([]);
+      } else if (roomSnapshot.ply === 0 && prev && prev.ply > 0) {
+        prevMpPlyRef.current = 0;
+        setSelectedSquare(null);
+        setLegalMoves([]);
+      }
+      return roomSnapshot;
+    });
+  }, []);
+
+  const fetchLobbyViaHttp = useCallback(async () => {
+    try {
+      const res = await fetch('/api/multiplayer?action=lobby', { cache: 'no-store' });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.ok) {
+        setSocketConnected(true);
+        if (Array.isArray(data.rooms)) {
+          setWaitingRooms(data.rooms);
+        }
+      }
+    } catch {
+      // ignore network error
+    }
+  }, []);
+
+  const dispatchMultiplayerAction = useCallback(
+    async <T = Record<string, unknown>>(
+      action: string,
+      payload: Record<string, unknown>,
+      onComplete?: (res: T) => void
+    ) => {
+      // Always execute via authoritative /api/multiplayer so Vercel Serverless & Node server stay in sync
+      try {
+        const response = await fetch('/api/multiplayer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, ...payload }),
+        });
+        const data = await response.json();
+        if (data.waitingRooms && Array.isArray(data.waitingRooms)) {
+          setWaitingRooms(data.waitingRooms);
+        }
+        if (data.room) {
+          applyIncomingRoomSnapshot(data.room as RoomStateSnapshot);
+        }
+        onComplete?.(data as T);
+
+        // If Socket.IO is also connected on a custom server, notify peers immediately
+        if (socketRef.current?.connected && data.ok && data.room) {
+          socketRef.current.emit('lobby:list');
+        }
+      } catch {
+        // Fallback to Socket.IO if fetch failed
+        if (socketRef.current?.connected) {
+          socketRef.current.emit(action, payload, (res: T) => {
+            onComplete?.(res);
+          });
+        } else {
+          onComplete?.({ ok: false, error: 'Gagal menghubungi server multiplayer.' } as unknown as T);
+        }
+      }
+    },
+    [applyIncomingRoomSnapshot]
+  );
+
+  // Connect Hybrid Multiplayer (HTTP Serverless + optional Socket.IO) on mount and check URL `?room=XXXXXX`
   useEffect(() => {
     sessionTokenRef.current = getOrCreateTabSessionToken();
     const suffix = sessionTokenRef.current.slice(-4).toUpperCase();
-
-    const socket = io({
-      path: '/socket.io',
-      transports: ['websocket', 'polling'],
-    });
-    socketRef.current = socket;
-
-    socket.on('connect', () => {
-      setSocketConnected(true);
+    queueMicrotask(() => {
       setPlayerName((prev) => (prev === 'Grandmaster' ? `Pemain ${suffix}` : prev));
-
-      if (typeof window !== 'undefined') {
-        const params = new URLSearchParams(window.location.search);
-        const urlRoom = params.get('room');
-        const savedRoom = window.sessionStorage.getItem('classic_chess_active_room');
-        const roomToJoin = urlRoom || savedRoom;
+      // 1. Immediately activate via Next.js Serverless API (/api/multiplayer) so Vercel works 100% out of the box
+      void fetchLobbyViaHttp().then(() => {
+        if (typeof window !== 'undefined') {
+          const params = new URLSearchParams(window.location.search);
+          const urlRoom = params.get('room');
+          const savedRoom = window.sessionStorage.getItem('classic_chess_active_room');
+          const roomToJoin = urlRoom || savedRoom;
 
         if (roomToJoin) {
           setActiveTab('multiplayer');
-          socket.emit(
+          dispatchMultiplayerAction<RoomJoinedResponse>(
             'room:join',
             {
               sessionToken: sessionTokenRef.current,
               roomCode: roomToJoin.toUpperCase(),
               playerName: `Pemain ${suffix}`,
             },
-            (res: RoomJoinedResponse) => {
+            (res) => {
               if (res.ok && res.room && res.yourRole) {
                 setActiveRoom(res.room);
                 setMyRole(res.yourRole);
                 prevMpPlyRef.current = res.room.ply;
+                prevMpStatusRef.current = res.room.status;
                 if (res.yourRole === 'w' || res.yourRole === 'b') {
                   setMpOrientation(res.yourRole);
                 }
@@ -261,11 +348,21 @@ export default function ClassicChessApp() {
             }
           );
         }
-      }
+        }
+      });
     });
 
-    socket.on('disconnect', () => {
-      setSocketConnected(false);
+    // 2. Optional Socket.IO accelerator when hosted on a stateful Node container (limited retries so Vercel stays clean)
+    const socket = io({
+      path: '/socket.io',
+      transports: ['polling', 'websocket'],
+      reconnectionAttempts: 2,
+      timeout: 2500,
+    });
+    socketRef.current = socket;
+
+    socket.on('connect', () => {
+      setSocketConnected(true);
     });
 
     socket.on('lobby:rooms', (rooms) => {
@@ -282,31 +379,11 @@ export default function ClassicChessApp() {
     });
 
     socket.on('game:start', (roomSnapshot: RoomStateSnapshot) => {
-      setActiveRoom(roomSnapshot);
-      playGameBellSound();
+      applyIncomingRoomSnapshot(roomSnapshot);
     });
 
     socket.on('game:state', (roomSnapshot: RoomStateSnapshot) => {
-      setActiveRoom((prev) => {
-        if (roomSnapshot.ply > prevMpPlyRef.current) {
-          const latestMove = roomSnapshot.moveHistory[roomSnapshot.moveHistory.length - 1];
-          if (roomSnapshot.inCheck) {
-            playCheckAlertSound();
-          } else if (latestMove?.promotion) {
-            playPromotionFanfareSound();
-          } else if (latestMove?.captured) {
-            playDuelCombatSound(latestMove.piece);
-          } else {
-            playWoodMoveSound();
-          }
-          prevMpPlyRef.current = roomSnapshot.ply;
-        } else if (roomSnapshot.ply === 0 && prev && prev.ply > 0) {
-          prevMpPlyRef.current = 0;
-        }
-        return roomSnapshot;
-      });
-      setSelectedSquare(null);
-      setLegalMoves([]);
+      applyIncomingRoomSnapshot(roomSnapshot);
     });
 
     socket.on('game:clock', (clockSnapshot) => {
@@ -332,14 +409,52 @@ export default function ClassicChessApp() {
     });
 
     socket.on('game:finished', (roomSnapshot: RoomStateSnapshot) => {
-      setActiveRoom(roomSnapshot);
-      playGameBellSound();
+      applyIncomingRoomSnapshot(roomSnapshot);
     });
 
     return () => {
       socket.disconnect();
     };
-  }, []);
+  }, [applyIncomingRoomSnapshot, dispatchMultiplayerAction, fetchLobbyViaHttp]);
+
+  // Real-time Serverless Polling Loop for Vercel & Hybrid synchronization
+  useEffect(() => {
+    if (activeRoom) {
+      const code = activeRoom.roomCode;
+      const interval = setInterval(async () => {
+        try {
+          const res = await fetch(
+            `/api/multiplayer?action=poll&roomCode=${encodeURIComponent(
+              code
+            )}&sessionToken=${encodeURIComponent(sessionTokenRef.current)}`,
+            { cache: 'no-store' }
+          );
+          if (!res.ok) return;
+          const data = await res.json();
+          if (data.ok && data.room) {
+            setSocketConnected(true);
+            applyIncomingRoomSnapshot(data.room as RoomStateSnapshot);
+          } else if (!data.ok && data.error) {
+            // Room was cancelled or closed
+            setActiveRoom(null);
+            if (typeof window !== 'undefined') {
+              window.sessionStorage.removeItem('classic_chess_active_room');
+            }
+          }
+        } catch {
+          // ignore transient poll error
+        }
+      }, 750);
+      return () => clearInterval(interval);
+    }
+
+    if (activeTab === 'multiplayer') {
+      const lobbyInterval = setInterval(() => {
+        fetchLobbyViaHttp();
+      }, 3000);
+      return () => clearInterval(lobbyInterval);
+    }
+  }, [activeRoom, activeTab, applyIncomingRoomSnapshot, fetchLobbyViaHttp]);
 
   // Determine current active board state based on activeTab
   const isMultiplayerView = activeTab === 'multiplayer' && activeRoom !== null;
@@ -541,11 +656,11 @@ export default function ClassicChessApp() {
     }
   };
 
-  // Execute move either locally, vs Bot AI, or via Socket.IO
+  // Execute move either locally, vs Bot AI, or via Hybrid Multiplayer
   const executeValidatedMove = (from: string, to: string, promotionPiece?: PieceSymbol) => {
-    if (isMultiplayerView && activeRoom && socketRef.current) {
+    if (isMultiplayerView && activeRoom) {
       setMpErrorBanner(null);
-      socketRef.current.emit(
+      dispatchMultiplayerAction<{ ok: boolean; error?: string; room?: RoomStateSnapshot }>(
         'game:move',
         {
           sessionToken: sessionTokenRef.current,
@@ -555,7 +670,7 @@ export default function ClassicChessApp() {
           promotion: promotionPiece,
           ply: activeRoom.ply,
         },
-        (res: { ok: boolean; error?: string; room?: RoomStateSnapshot }) => {
+        (res) => {
           if (!res.ok) {
             setMpErrorBanner(res.error || 'Langkah ditolak oleh server.');
           }
@@ -644,7 +759,6 @@ export default function ClassicChessApp() {
 
   const handleUndoLocal = () => {
     const chess = localChessRef.current;
-    // In Bot mode, undo both the Bot's move and the Player's move if it's currently player's turn
     const stepsToUndo = activeTab === 'bot' && chess.turn() === botPlayerColor && localMoves.length >= 2 ? 2 : 1;
     let undoneCount = 0;
     for (let i = 0; i < stepsToUndo; i++) {
@@ -671,11 +785,10 @@ export default function ClassicChessApp() {
     playWoodMoveSound();
   };
 
-  // Multiplayer Actions
+  // Multiplayer Actions (Hybrid Serverless + Socket.IO)
   const handleCreateRoom = () => {
-    if (!socketRef.current) return;
     setMpErrorBanner(null);
-    socketRef.current.emit(
+    dispatchMultiplayerAction<RoomJoinedResponse>(
       'room:create',
       {
         sessionToken: sessionTokenRef.current,
@@ -684,11 +797,12 @@ export default function ClassicChessApp() {
         preferredColor,
         visibility: roomVisibility,
       },
-      (res: RoomJoinedResponse) => {
+      (res) => {
         if (res.ok && res.room && res.yourRole) {
           setActiveRoom(res.room);
           setMyRole(res.yourRole);
           prevMpPlyRef.current = res.room.ply;
+          prevMpStatusRef.current = res.room.status;
           if (res.yourRole === 'w' || res.yourRole === 'b') {
             setMpOrientation(res.yourRole);
           }
@@ -707,20 +821,20 @@ export default function ClassicChessApp() {
   };
 
   const handleJoinRoomByCode = (code: string) => {
-    if (!socketRef.current) return;
     setMpErrorBanner(null);
-    socketRef.current.emit(
+    dispatchMultiplayerAction<RoomJoinedResponse>(
       'room:join',
       {
         sessionToken: sessionTokenRef.current,
         roomCode: code.toUpperCase(),
         playerName,
       },
-      (res: RoomJoinedResponse) => {
+      (res) => {
         if (res.ok && res.room && res.yourRole) {
           setActiveRoom(res.room);
           setMyRole(res.yourRole);
           prevMpPlyRef.current = res.room.ply;
+          prevMpStatusRef.current = res.room.status;
           if (res.yourRole === 'w' || res.yourRole === 'b') {
             setMpOrientation(res.yourRole);
           }
@@ -739,14 +853,14 @@ export default function ClassicChessApp() {
   };
 
   const handleReadyToStart = () => {
-    if (!socketRef.current || !activeRoom) return;
-    socketRef.current.emit(
+    if (!activeRoom) return;
+    dispatchMultiplayerAction<{ ok: boolean; error?: string }>(
       'room:ready',
       {
         sessionToken: sessionTokenRef.current,
         roomCode: activeRoom.roomCode,
       },
-      (res: { ok: boolean; error?: string }) => {
+      (res) => {
         if (!res.ok) {
           setMpErrorBanner(res.error || 'Gagal memulai pertandingan.');
         }
@@ -755,8 +869,8 @@ export default function ClassicChessApp() {
   };
 
   const handleCancelWaitingRoom = () => {
-    if (!socketRef.current || !activeRoom) return;
-    socketRef.current.emit(
+    if (!activeRoom) return;
+    dispatchMultiplayerAction(
       'room:cancel',
       {
         sessionToken: sessionTokenRef.current,
@@ -769,16 +883,16 @@ export default function ClassicChessApp() {
   };
 
   const handleOfferDraw = () => {
-    if (!socketRef.current || !activeRoom) return;
-    socketRef.current.emit('game:draw-offer', {
+    if (!activeRoom) return;
+    dispatchMultiplayerAction('game:draw-offer', {
       sessionToken: sessionTokenRef.current,
       roomCode: activeRoom.roomCode,
     });
   };
 
   const handleRespondDraw = (accept: boolean) => {
-    if (!socketRef.current || !activeRoom) return;
-    socketRef.current.emit('game:draw-response', {
+    if (!activeRoom) return;
+    dispatchMultiplayerAction('game:draw-response', {
       sessionToken: sessionTokenRef.current,
       roomCode: activeRoom.roomCode,
       accept,
@@ -786,14 +900,14 @@ export default function ClassicChessApp() {
   };
 
   const handleClaimDraw = () => {
-    if (isMultiplayerView && socketRef.current && activeRoom) {
-      socketRef.current.emit(
+    if (isMultiplayerView && activeRoom) {
+      dispatchMultiplayerAction<{ ok: boolean; error?: string }>(
         'game:claim-draw',
         {
           sessionToken: sessionTokenRef.current,
           roomCode: activeRoom.roomCode,
         },
-        (res: { ok: boolean; error?: string }) => {
+        (res) => {
           if (!res.ok) {
             setMpErrorBanner(res.error || 'Klaim remis ditolak.');
           }
@@ -812,22 +926,22 @@ export default function ClassicChessApp() {
   };
 
   const handleResign = () => {
-    if (!socketRef.current || !activeRoom) return;
-    socketRef.current.emit('game:resign', {
+    if (!activeRoom) return;
+    dispatchMultiplayerAction('game:resign', {
       sessionToken: sessionTokenRef.current,
       roomCode: activeRoom.roomCode,
     });
   };
 
   const handleRematch = () => {
-    if (!socketRef.current || !activeRoom) return;
-    socketRef.current.emit(
+    if (!activeRoom) return;
+    dispatchMultiplayerAction<{ ok: boolean; room?: RoomStateSnapshot }>(
       'room:rematch',
       {
         sessionToken: sessionTokenRef.current,
         roomCode: activeRoom.roomCode,
       },
-      (res: { ok: boolean; room?: RoomStateSnapshot }) => {
+      (res) => {
         if (res.ok && res.room) {
           if (myRole === 'w') {
             setMyRole('b');
@@ -850,19 +964,19 @@ export default function ClassicChessApp() {
       url.searchParams.delete('room');
       window.history.replaceState({}, '', url.toString());
     }
-    socketRef.current?.emit('lobby:list');
+    fetchLobbyViaHttp();
   };
 
   const handleSendChat = (message: string) => {
-    if (!socketRef.current || !activeRoom) return;
-    socketRef.current.emit(
+    if (!activeRoom) return;
+    dispatchMultiplayerAction<{ ok: boolean; error?: string }>(
       'chat:send',
       {
         sessionToken: sessionTokenRef.current,
         roomCode: activeRoom.roomCode,
         message,
       },
-      (res: { ok: boolean; error?: string }) => {
+      (res) => {
         if (!res.ok && res.error) {
           setMpErrorBanner(res.error);
         }
@@ -1522,7 +1636,10 @@ export default function ClassicChessApp() {
                 waitingRooms={waitingRooms}
                 onCreateRoom={handleCreateRoom}
                 onJoinRoomByCode={handleJoinRoomByCode}
-                onRefreshLobby={() => socketRef.current?.emit('lobby:list')}
+                onRefreshLobby={() => {
+                  fetchLobbyViaHttp();
+                  socketRef.current?.emit('lobby:list');
+                }}
                 activeRoom={activeRoom}
                 myRole={myRole}
                 onReadyToStart={handleReadyToStart}
