@@ -27,6 +27,14 @@ export const metadata: Metadata = {
   title: 'Classic Chess 3D',
   description:
     'Permainan catur 3D klasik bergaya Staunton dengan aturan FIDE lengkap dan room multiplayer real-time tersinkronisasi.',
+  icons: {
+    icon: [
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/icon.svg', type: 'image/svg+xml' },
+    ],
+    shortcut: '/favicon.svg',
+    apple: '/apple-icon',
+  },
   openGraph: {
     title: 'Classic Chess 3D',
     description:
