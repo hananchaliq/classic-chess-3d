@@ -1,0 +1,6 @@
+{
+  "summary":  "Rencana implementasi pembaruan Ultra-Realistic Living 3D Chess Arena: mencakup Grand Chess Chamber 3D (perpustakaan/klub klasik), Karakter Bidak Hidup beranimasi dengan toggle Staunton, Sistem Duel Capture Sinematik, Mode Latihan Bot AI via Web Worker (Hint & Analisis Evaluasi), Penyempurnaan Room Privat/Publik, serta Pengaturan Kualitas Grafis (Low/Medium/High/Ultra).",
+  "updatedAt":  "2026-10-22T01:30:03.521298523Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

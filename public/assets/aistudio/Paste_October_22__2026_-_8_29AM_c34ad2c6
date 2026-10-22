@@ -1,0 +1,1020 @@
+# MASTER PROMPT: CLASSIC CHESS 3D — MULTIPLAYER BROWSER GAME
+
+## 1. Peran dan tujuan proyek
+
+Bertindak sebagai Senior Full-Stack Engineer, Game Developer, 3D Web Developer, UI/UX Designer, dan Software Architect.
+
+Bangun sebuah website permainan catur 3D klasik berbasis browser bernama sementara **Classic Chess 3D**. Nama, logo, dan identitas visual harus mudah diganti.
+
+Produk harus terasa seperti bermain catur di atas papan kayu sungguhan, tetapi tetap memiliki kenyamanan platform catur modern: akun pemain, matchmaking, pertandingan bersama teman, bot AI, rating ELO, chat, riwayat pertandingan, dan puzzle catur.
+
+Ini adalah aplikasi interaktif yang harus benar-benar berfungsi, bukan sekadar mockup.
+
+### Tujuan utama
+
+- Papan dan bidak catur ditampilkan dalam 3D.
+- Pemain dapat bermain melawan manusia melalui internet.
+- Pemain dapat membuat room privat dan membagikan tautan undangan.
+- Pemain dapat bermain melawan bot AI.
+- Semua langkah mengikuti aturan catur standar.
+- Status pertandingan tersinkronisasi dengan benar pada kedua perangkat.
+- Sistem akun, rating, riwayat, dan chat terhubung dengan backend nyata.
+- Website responsif, cepat, aman, dan dapat di-deploy.
+
+## 2. Stack teknologi
+
+Gunakan teknologi berikut sebagai baseline. Periksa kompatibilitas versi stabil dan dokumentasi resmi sebelum memasang dependensi.
+
+### Frontend
+
+- Next.js dengan App Router.
+- TypeScript dengan strict mode.
+- React.
+- React Three Fiber untuk rendering 3D.
+- Three.js dan `@react-three/drei` untuk utilitas scene, kamera, pencahayaan, dan kontrol.
+- Tailwind CSS untuk styling antarmuka.
+- Library ikon seperti Lucide React.
+- `chess.js` untuk validasi aturan catur di sisi klien dan server.
+- React Hook Form dan Zod untuk validasi formulir apabila diperlukan.
+
+### Backend dan penyimpanan
+
+- PostgreSQL sebagai database utama.
+- Supabase Auth untuk autentikasi, dengan kebijakan akses database yang benar.
+- Prisma ORM atau Drizzle ORM. Pilih satu dan gunakan secara konsisten.
+- Backend game terpisah menggunakan Node.js, TypeScript, dan Socket.IO untuk koneksi multiplayer real-time.
+- Redis opsional untuk koordinasi antarbeberapa instance, rate limiting, dan penyimpanan status sementara apabila skala aplikasi memerlukannya.
+
+### Bot dan integrasi eksternal
+
+- Stockfish sebagai engine catur untuk lawan bot dan analisis.
+- Lichess API untuk fitur publik yang benar-benar didukung oleh dokumentasinya, terutama data puzzle atau data permainan yang diizinkan.
+- Sumber aset 3D berlisensi sesuai atau model bidak prosedural yang dibuat sendiri.
+
+Jangan menambahkan layanan atau library hanya karena populer. Setiap dependensi harus memiliki fungsi yang jelas.
+
+## 3. Arsitektur sistem
+
+Pisahkan aplikasi menjadi tiga bagian utama.
+
+### A. Web application
+
+Next.js menangani:
+
+- Halaman publik.
+- Login dan pendaftaran.
+- Profil pemain.
+- Dashboard.
+- Halaman permainan.
+- Riwayat pertandingan.
+- Puzzle.
+- Pengaturan pengguna.
+
+Rendering 3D hanya dijalankan pada komponen client yang sesuai. Gunakan dynamic import dengan SSR dinonaktifkan untuk komponen scene apabila dibutuhkan agar Three.js tidak mengakses API browser saat server-side rendering.
+
+### B. Game server
+
+Game server menangani:
+
+- Pembuatan dan pengelolaan room.
+- Pencocokan pemain.
+- Penentuan giliran.
+- Validasi langkah di server.
+- Jam pertandingan.
+- Sinkronisasi state.
+- Deteksi skakmat, remis, dan akhir pertandingan.
+- Rekoneksi pemain.
+- Penyimpanan hasil pertandingan.
+- Pembaruan rating secara aman.
+
+Server harus menjadi sumber kebenaran untuk pertandingan online. Jangan mempercayai state papan, waktu, hasil, atau rating yang dikirim langsung oleh browser.
+
+### C. Database
+
+Simpan data permanen seperti akun, profil, rating, pertandingan, langkah, hasil, puzzle yang dikerjakan, dan statistik.
+
+Status pertandingan aktif boleh disimpan sementara di memori server untuk MVP, tetapi harus memiliki mekanisme pemulihan atau persistensi yang memadai. Jika menggunakan beberapa instance server, jangan mengandalkan memori lokal sebagai satu-satunya sumber state.
+
+### Diagram arsitektur
+
+Browser → Next.js frontend → Supabase Auth untuk identitas pengguna.
+
+Browser → Game server melalui Socket.IO untuk pertandingan real-time.
+
+Game server → PostgreSQL untuk hasil pertandingan dan data permanen.
+
+Browser → Stockfish Web Worker untuk perhitungan langkah bot.
+
+Backend integrasi → Lichess API untuk data eksternal yang didukung.
+
+Jangan menaruh secret key, token privat, atau kredensial database di kode frontend.
+
+## 4. Desain visual dan identitas produk
+
+Buat desain klasik yang elegan, terinspirasi oleh klub catur tradisional, bukan menyalin tampilan merek atau website catur yang sudah ada.
+
+### Arah visual
+
+- Papan dari kayu walnut dan maple.
+- Bidak bergaya Staunton dengan proporsi yang konsisten.
+- Material kayu dengan tekstur halus dan detail secukupnya.
+- Pencahayaan hangat, bayangan lembut, dan ambient occlusion jika performa memungkinkan.
+- Latar belakang bernuansa cokelat gelap, krem, dan hitam.
+- Tipografi yang elegan tetapi tetap mudah dibaca.
+- Panel UI minimalis dengan hierarki informasi yang jelas.
+- Animasi perpindahan bidak yang halus dan tidak mengganggu permainan.
+
+Hindari glow berlebihan, gradien acak, efek neon, kartu besar yang tidak perlu, dan elemen dekoratif yang mengganggu papan.
+
+### Palet warna awal
+
+- Walnut gelap: `#38251C`
+- Kayu cokelat: `#79543A`
+- Krem papan: `#E7D5B5`
+- Cokelat papan: `#9A6A45`
+- Latar belakang: `#171513`
+- Teks utama: `#F2E9DC`
+- Aksen emas lembut: `#C7A66A`
+
+Semua warna harus didefinisikan melalui design tokens agar mudah diubah.
+
+## 5. Rendering papan dan bidak 3D
+
+Bangun scene menggunakan React Three Fiber.
+
+### Papan
+
+- Papan 8 × 8 dengan 64 petak yang jelas.
+- Ukuran petak konsisten.
+- Alas papan memiliki ketebalan dan bevel ringan.
+- Material kayu yang terlihat realistis tanpa tekstur beresolusi berlebihan.
+- Kamera perspektif dengan sudut pandang pemain.
+- Kontrol orbit terbatas agar pengguna dapat memutar sudut pandang tanpa kehilangan orientasi.
+- Tombol untuk mengembalikan kamera ke sudut default.
+- Opsi mengganti sisi pandang menjadi putih atau hitam.
+
+### Bidak
+
+Sediakan 32 bidak standar pada posisi awal:
+
+- 2 raja.
+- 2 ratu.
+- 4 benteng.
+- 4 gajah.
+- 4 kuda.
+- 16 pion.
+
+Gunakan model 3D prosedural atau aset GLB/GLTF yang memiliki izin penggunaan sesuai.
+
+Bidak harus:
+
+- Memiliki siluet yang mudah dikenali.
+- Menggunakan material putih gading dan kayu gelap.
+- Memiliki skala yang sesuai dengan petak.
+- Bisa dipilih menggunakan pointer.
+- Dapat dianimasikan saat berpindah.
+- Tetap responsif ketika pengguna mengklik petak tujuan.
+
+Jangan membuat satu model generik yang hanya mengganti warna untuk seluruh jenis bidak.
+
+### Interaksi
+
+- Klik bidak untuk memilih.
+- Tampilkan petak tujuan yang legal.
+- Klik petak tujuan untuk bergerak.
+- Dukung drag-and-drop jika tidak mengganggu aksesibilitas.
+- Tampilkan langkah terakhir.
+- Tampilkan indikator raja yang sedang skak.
+- Berikan animasi singkat untuk promosi, rokade, dan en passant.
+- Sediakan undo hanya untuk mode bot atau latihan yang mengizinkannya. Pertandingan kompetitif online tidak boleh bisa di-undo sepihak.
+
+### Optimasi 3D
+
+- Gunakan instancing untuk geometri berulang apabila sesuai.
+- Batasi jumlah shadow map dan kualitas bayangan pada perangkat lemah.
+- Gunakan model dengan tingkat detail yang masuk akal.
+- Hindari membuat ulang seluruh scene setiap kali langkah berubah.
+- Batasi pixel ratio pada layar beresolusi tinggi.
+- Sediakan mode grafis rendah dan fallback apabila WebGL tidak tersedia.
+- Hentikan atau kurangi rendering saat tab tidak aktif jika aman.
+- Jangan memuat aset besar sebelum diperlukan.
+
+## 6. Mesin aturan catur
+
+Gunakan `chess.js` untuk menerapkan aturan catur standar. Jangan menulis ulang seluruh aturan catur secara manual kecuali ada alasan teknis yang jelas.
+
+Semua langkah pertandingan online harus divalidasi kembali oleh server.
+
+Pastikan implementasi mencakup:
+
+- Gerakan legal semua bidak.
+- Giliran putih dan hitam.
+- Skak dan skakmat.
+- Stalemate.
+- Rokade pendek dan panjang.
+- En passant.
+- Promosi pion menjadi ratu, benteng, gajah, atau kuda.
+- Threefold repetition dan aturan klaim remis yang sesuai.
+- Aturan 50 langkah dan kondisi remis otomatis yang berlaku.
+- Material tidak mencukupi untuk skakmat.
+- Deteksi akhir pertandingan.
+- PGN dan FEN untuk merepresentasikan permainan.
+
+Bedakan kondisi remis yang otomatis dengan kondisi yang harus diklaim pemain. Jangan mengakhiri pertandingan secara keliru hanya karena sebuah posisi terlihat seimbang.
+
+Simpan riwayat langkah dalam format yang memungkinkan rekonstruksi pertandingan. Setiap langkah harus terhubung dengan nomor urut, pemain, notasi, dan waktu yang relevan.
+
+## 7. Sistem multiplayer online
+
+Gunakan Socket.IO untuk komunikasi real-time antara browser dan game server.
+
+### Membuat room
+
+Pemain dapat:
+
+1. Login.
+2. Membuat room.
+3. Memilih kontrol waktu.
+4. Mendapatkan kode room unik.
+5. Menyalin tautan undangan.
+6. Membagikan tautan kepada teman.
+7. Menunggu lawan bergabung.
+8. Memulai pertandingan ketika kedua pemain siap.
+
+Room harus memiliki status seperti waiting, active, finished, dan abandoned.
+
+### Bergabung ke room
+
+- Validasi kode room pada server.
+- Batasi kapasitas room menjadi dua pemain untuk mode standar.
+- Pisahkan pemain dari penonton apabila mode spectator ditambahkan.
+- Cegah pengguna mengambil alih kursi pemain lain.
+- Periksa status pertandingan sebelum menerima langkah.
+- Berikan pesan yang jelas jika room tidak tersedia.
+
+Tautan undangan tidak boleh menjadi pengganti autentikasi atau otorisasi.
+
+### Protokol permainan
+
+Definisikan event Socket.IO secara eksplisit, misalnya:
+
+- `room:create`
+- `room:join`
+- `room:ready`
+- `game:start`
+- `game:move`
+- `game:state`
+- `game:clock`
+- `game:resign`
+- `game:draw-offer`
+- `game:draw-response`
+- `player:reconnected`
+- `player:disconnected`
+- `chat:send`
+- `chat:message`
+- `game:finished`
+
+Nama event ini adalah kontrak internal aplikasi yang harus dibuat, bukan endpoint API publik.
+
+Untuk setiap event, tentukan schema payload, autentikasi, otorisasi, validasi, respons berhasil, dan respons gagal.
+
+### Validasi langkah
+
+Ketika server menerima langkah:
+
+1. Verifikasi identitas pemain.
+2. Pastikan pemain berada di room tersebut.
+3. Pastikan pertandingan aktif.
+4. Pastikan pemain memiliki giliran.
+5. Validasi notasi langkah menggunakan state server.
+6. Terapkan langkah secara atomik.
+7. Hitung status permainan.
+8. Perbarui jam pertandingan.
+9. Simpan atau antrekan persistensi.
+10. Kirim state baru kepada kedua pemain.
+
+Tolak langkah ilegal, duplikat, terlambat, atau berasal dari pemain yang salah.
+
+Gunakan nomor urut langkah dan identitas aksi untuk mencegah duplikasi akibat pengiriman ulang.
+
+### Jam pertandingan
+
+Sediakan preset seperti:
+
+- 1+0.
+- 3+0.
+- 3+2.
+- 5+0.
+- 10+0.
+- Tanpa batas waktu untuk mode kasual.
+
+Format menunjukkan menit awal dan tambahan detik per langkah.
+
+Waktu harus dihitung berdasarkan timestamp server, bukan hanya timer browser. Browser menampilkan estimasi yang disinkronkan dari server. Tangani keterlambatan jaringan dan perpindahan tab dengan benar.
+
+### Rekoneksi
+
+- Izinkan pemain menyambung kembali ke pertandingan aktif.
+- Verifikasi ulang identitas dan keanggotaan room.
+- Kirim snapshot state terkini.
+- Sinkronkan kembali jam pertandingan.
+- Cegah klien lama menimpa state terbaru.
+- Tentukan kebijakan jika pemain tidak kembali dalam batas waktu tertentu.
+
+### Matchmaking
+
+Sediakan dua mode:
+
+1. Room privat dengan kode atau tautan.
+2. Matchmaking otomatis berdasarkan kontrol waktu dan rating.
+
+Untuk matchmaking, gunakan antrean server. Jika tidak ada lawan yang cocok, pemain tetap berada dalam antrean sampai menemukan lawan atau membatalkan pencarian.
+
+Jangan mengklaim matchmaking berfungsi apabila implementasinya hanya mengarahkan pemain ke halaman permainan kosong.
+
+## 8. Sistem bot AI
+
+Gunakan Stockfish melalui Web Worker di browser jika konfigurasi dan performanya memadai.
+
+### Fitur bot
+
+- Pemain memilih putih atau hitam.
+- Pilihan tingkat kesulitan.
+- Bot membuat langkah legal.
+- Bot merespons setelah langkah pemain.
+- Indikator saat bot berpikir.
+- Pilihan untuk memulai ulang permainan.
+- Analisis posisi setelah permainan jika diaktifkan.
+
+Tingkat kesulitan harus dikaitkan dengan konfigurasi engine yang nyata, misalnya batas kedalaman pencarian atau waktu berpikir. Jangan menjanjikan rating bot yang akurat hanya berdasarkan angka kedalaman engine.
+
+### Keamanan
+
+Jangan menjalankan engine tanpa batas waktu atau sumber daya.
+
+Gunakan batas waktu komputasi, hentikan worker ketika tidak diperlukan, dan pastikan bot tidak menghambat rendering 3D.
+
+Jangan mengirim seluruh analisis privat engine kepada lawan dalam pertandingan kompetitif.
+
+## 9. Akun, profil, dan autentikasi
+
+Gunakan Supabase Auth untuk akun pemain.
+
+Fitur:
+
+- Pendaftaran.
+- Login.
+- Logout.
+- Pemulihan kata sandi.
+- Profil pemain.
+- Username unik.
+- Avatar.
+- Rating.
+- Statistik kemenangan, kekalahan, dan remis.
+- Riwayat pertandingan.
+
+Dukung provider autentikasi yang benar-benar dikonfigurasi. Jangan menampilkan tombol login sosial yang tidak berfungsi.
+
+Verifikasi identitas pada backend game menggunakan mekanisme yang didukung dan diverifikasi sesuai dokumentasi resmi Supabase. Jangan mempercayai user ID yang dikirim bebas oleh browser.
+
+Sediakan validasi username, pembatasan percobaan login, dan penanganan error yang tidak membocorkan informasi sensitif.
+
+## 10. Rating ELO
+
+Implementasikan rating kompetitif dengan rumus ELO yang jelas dan konsisten.
+
+Gunakan rumus:
+
+Expected score pemain A:
+
+E_A = 1 / (1 + 10^((R_B - R_A) / 400))
+
+Rating baru:
+
+R'_A = R_A + K(S_A - E_A)
+
+Dengan:
+- R_A: rating awal pemain A.
+- R_B: rating awal lawan.
+- S_A: 1 untuk menang, 0,5 untuk remis, dan 0 untuk kalah.
+- K: faktor penyesuaian yang ditetapkan berdasarkan kebijakan rating.
+
+Rating pemain B dihitung dengan rumus yang sama menggunakan hasil kebalikan.
+
+Persyaratan:
+
+- Pembaruan hanya terjadi setelah hasil pertandingan final dan valid.
+- Kedua rating diperbarui secara atomik.
+- Pertandingan kasual tidak mengubah rating kompetitif.
+- Pertandingan yang belum selesai tidak mengubah rating.
+- Pengiriman ulang event hasil tidak boleh memperbarui rating dua kali.
+- Simpan rating sebelum dan sesudah pertandingan.
+- Pisahkan rating berdasarkan mode atau kontrol waktu jika sistem membutuhkannya.
+
+Gunakan transaksi database dan idempotency key atau mekanisme unik yang sesuai.
+
+## 11. Chat pertandingan
+
+Sediakan chat sederhana di panel samping papan.
+
+Fitur:
+
+- Mengirim pesan teks.
+- Pesan sistem ketika pertandingan dimulai atau berakhir.
+- Timestamp pesan.
+- Indikator pemain.
+- Riwayat chat selama pertandingan berlangsung.
+
+Keamanan:
+
+- Validasi panjang pesan di server.
+- Sanitasi dan tampilkan teks sebagai teks, bukan HTML yang dieksekusi.
+- Terapkan rate limiting.
+- Cegah spam dan payload berlebihan.
+- Jangan menerima nama pengirim yang diklaim bebas oleh klien.
+- Sediakan mekanisme pelaporan atau moderasi jika produk berkembang.
+
+Chat tidak boleh menghalangi interaksi papan pada layar kecil.
+
+## 12. Integrasi Lichess API
+
+Gunakan Lichess API hanya untuk fungsi yang benar-benar didukung oleh dokumentasi resmi.
+
+Dokumentasi utama:
+https://lichess.org/api
+
+Panduan pengembang:
+https://lichess.org/developers
+
+Panduan penggunaan dan rate limiting:
+https://lichess.org/page/api-tips
+
+### Cara mengintegrasikan
+
+Sebelum membuat integrasi:
+
+1. Periksa dokumentasi endpoint terbaru.
+2. Pastikan endpoint mendukung kebutuhan yang diminta.
+3. Verifikasi metode HTTP, parameter, autentikasi, format respons, dan rate limit.
+4. Periksa lisensi dan ketentuan penggunaan data.
+5. Buat adapter server-side yang terisolasi dari UI.
+6. Validasi respons API sebelum digunakan.
+7. Tangani timeout, error, pembatasan request, dan kegagalan layanan.
+8. Tambahkan cache jika diizinkan dan bermanfaat.
+
+### Puzzle catur
+
+Gunakan sumber puzzle yang sah dan dokumentasinya jelas.
+
+Lichess menyediakan data puzzle dan endpoint yang terkait dengan puzzle. Periksa dokumentasi resmi untuk operasi yang diperlukan, format data, batas penggunaan, dan ketentuan atribusi.
+
+Jika endpoint yang diperlukan tidak tersedia atau tidak sesuai kebutuhan, gunakan dataset puzzle dengan lisensi yang sesuai atau bangun sistem puzzle sendiri.
+
+Jangan mengarang endpoint. Jangan mengasumsikan semua data dapat diakses tanpa autentikasi atau batas penggunaan.
+
+### Batas integrasi
+
+- Jangan menjadikan API Lichess sebagai pengganti backend multiplayer milik aplikasi.
+- Jangan mengasumsikan API publik memberikan akses bebas untuk membuat dan mengelola seluruh jenis pertandingan yang diinginkan.
+- Jangan melakukan scraping halaman website sebagai jalan pintas.
+- Jangan meminta token privat pengguna jika fitur tidak memerlukannya.
+- Jangan menyalin branding, UI, atau aset Lichess.
+- Jika integrasi gagal, berikan fallback yang jelas.
+
+### Adapter
+
+Buat modul terpisah seperti `lichess-client.ts` dan `puzzle-service.ts`.
+
+UI tidak boleh bergantung langsung pada struktur respons mentah dari Lichess. Normalisasikan data ke tipe internal aplikasi.
+
+Jangan menambahkan endpoint palsu atau mengarang bentuk respons demi membuat demo terlihat selesai.
+
+## 13. Halaman dan navigasi
+
+Buat halaman berikut.
+
+### Landing page
+
+- Hero dengan preview papan 3D.
+- Tombol Play Online.
+- Tombol Play with Friends.
+- Tombol Play vs Bot.
+- Penjelasan fitur.
+- Navigasi login dan daftar.
+- Tampilan responsif.
+
+Papan 3D harus menjadi elemen visual utama, bukan sekadar gambar statis.
+
+### Dashboard
+
+- Rating pemain.
+- Statistik pertandingan.
+- Pertandingan terakhir.
+- Tombol mulai bermain.
+- Shortcut ke puzzle.
+- Profil pengguna.
+
+### Play Online
+
+- Pilihan kontrol waktu.
+- Tombol mencari lawan.
+- Status antrean.
+- Pembatalan pencarian.
+- Tampilan pertandingan setelah lawan ditemukan.
+
+### Play with Friends
+
+- Membuat room.
+- Memilih kontrol waktu.
+- Kode undangan.
+- Tombol salin tautan.
+- Form bergabung menggunakan kode.
+- Status lawan bergabung.
+
+### Game room
+
+Layout desktop:
+
+- Papan 3D sebagai area utama.
+- Identitas lawan di atas papan.
+- Identitas pemain di bawah papan.
+- Jam kedua pemain.
+- Panel langkah dan notasi.
+- Chat.
+- Tombol menyerah, menawarkan remis, dan pengaturan tampilan.
+
+Layout mobile:
+
+- Papan tetap menjadi prioritas.
+- Panel samping berubah menjadi tab atau drawer.
+- Kontrol tidak menutupi petak.
+- Jam mudah dibaca.
+- Mendukung orientasi layar yang sempit.
+
+### Puzzle
+
+- Papan interaktif.
+- Posisi awal dari FEN yang valid.
+- Instruksi singkat.
+- Validasi langkah solusi.
+- Umpan balik benar atau salah.
+- Tombol hint.
+- Pencatatan penyelesaian.
+- Rating puzzle opsional.
+
+Jangan memberikan solusi puzzle hanya berdasarkan kecocokan string langkah. Validasi posisi dan langkah menggunakan mesin aturan catur.
+
+### Profile dan history
+
+- Profil pemain.
+- Rating dan statistik.
+- Daftar pertandingan.
+- Filter hasil.
+- Detail pertandingan.
+- Replay langkah.
+- Tampilan PGN.
+- Analisis jika tersedia.
+
+## 14. Database schema
+
+Rancang schema relasional yang dinormalisasi dan sertakan migration.
+
+Tabel minimal:
+
+### `profiles`
+
+- `id`: UUID yang berelasi dengan identitas pengguna.
+- `username`: unik.
+- `display_name`.
+- `avatar_url`.
+- `created_at`.
+- `updated_at`.
+
+### `ratings`
+
+- `id`.
+- `user_id`.
+- `rating_type` atau mode rating.
+- `rating`.
+- `games_played`.
+- `wins`.
+- `losses`.
+- `draws`.
+- `updated_at`.
+
+Tambahkan unique constraint untuk kombinasi pengguna dan tipe rating.
+
+### `game_rooms`
+
+- `id`.
+- `room_code_hash` atau identitas undangan yang aman.
+- `white_player_id`.
+- `black_player_id`.
+- `status`.
+- `time_control`.
+- `visibility`.
+- `created_at`.
+- `started_at`.
+- `finished_at`.
+
+Jangan menyimpan token undangan rahasia dalam bentuk yang mudah ditebak.
+
+### `games`
+
+- `id`.
+- `room_id` jika pertandingan berasal dari room.
+- `white_player_id`.
+- `black_player_id`.
+- `mode`.
+- `status`.
+- `initial_fen`.
+- `final_fen`.
+- `pgn`.
+- `result`.
+- `termination_reason`.
+- `white_rating_before`.
+- `black_rating_before`.
+- `white_rating_after`.
+- `black_rating_after`.
+- `started_at`.
+- `finished_at`.
+
+### `game_moves`
+
+- `id`.
+- `game_id`.
+- `ply`.
+- `uci`.
+- `san`.
+- `fen_after`.
+- `elapsed_ms`.
+- `created_at`.
+
+Tambahkan unique constraint untuk `(game_id, ply)`.
+
+### `game_messages`
+
+- `id`.
+- `game_id`.
+- `sender_id`.
+- `message`.
+- `created_at`.
+
+### `puzzle_attempts`
+
+- `id`.
+- `user_id`.
+- `puzzle_id`.
+- `status`.
+- `attempts`.
+- `completed_at`.
+
+Tambahkan indeks untuk query riwayat, rating, pertandingan aktif, dan puzzle.
+
+Jangan menyimpan secret, access token privat, atau informasi autentikasi yang tidak diperlukan di tabel profil.
+
+Gunakan foreign key, constraint, dan transaksi yang sesuai. Sediakan migration, seed untuk data demo, dan kebijakan retensi data yang masuk akal.
+
+## 15. Struktur folder yang disarankan
+
+Gunakan struktur yang rapi dan konsisten.
+
+```text
+classic-chess-3d/
+├── apps/
+│   ├── web/
+│   │   ├── src/
+│   │   │   ├── app/
+│   │   │   │   ├── (public)/
+│   │   │   │   ├── (auth)/
+│   │   │   │   ├── dashboard/
+│   │   │   │   ├── play/
+│   │   │   │   ├── game/[gameId]/
+│   │   │   │   ├── puzzle/
+│   │   │   │   ├── profile/[username]/
+│   │   │   │   └── history/
+│   │   │   ├── components/
+│   │   │   │   ├── ui/
+│   │   │   │   ├── chess/
+│   │   │   │   ├── game/
+│   │   │   │   └── layout/
+│   │   │   ├── features/
+│   │   │   │   ├── auth/
+│   │   │   │   ├── matchmaking/
+│   │   │   │   ├── multiplayer/
+│   │   │   │   ├── bot/
+│   │   │   │   ├── rating/
+│   │   │   │   ├── chat/
+│   │   │   │   └── puzzles/
+│   │   │   ├── lib/
+│   │   │   ├── hooks/
+│   │   │   └── types/
+│   │   ├── public/
+│   │   └── package.json
+│   └── game-server/
+│       ├── src/
+│       │   ├── server.ts
+│       │   ├── socket/
+│       │   ├── rooms/
+│       │   ├── games/
+│       │   ├── matchmaking/
+│       │   ├── services/
+│       │   ├── middleware/
+│       │   └── types/
+│       └── package.json
+├── packages/
+│   ├── chess-core/
+│   ├── shared-types/
+│   └── validation/
+├── database/
+│   ├── migrations/
+│   └── seed/
+├── tests/
+│   ├── unit/
+│   ├── integration/
+│   └── e2e/
+├── docs/
+│   ├── architecture.md
+│   ├── api-contracts.md
+│   ├── database.md
+│   └── deployment.md
+├── .env.example
+├── package.json
+└── README.md
+```
+
+Struktur ini merupakan usulan awal. Sesuaikan berdasarkan toolchain dan kebutuhan sebenarnya, tetapi jangan mencampur semua logika dalam satu file besar.
+
+## 16. Keamanan
+
+Terapkan prinsip keamanan berikut:
+
+- Validasi seluruh payload pada server.
+- Verifikasi token autentikasi.
+- Periksa otorisasi room pada setiap event penting.
+- Gunakan HTTPS dan koneksi WebSocket aman di produksi.
+- Terapkan rate limiting pada login, room, matchmaking, dan chat.
+- Batasi ukuran payload.
+- Gunakan query parameter yang aman melalui ORM.
+- Simpan secret melalui environment variables.
+- Terapkan Row Level Security pada tabel Supabase yang diakses klien.
+- Jangan mengekspos service-role key ke browser.
+- Lindungi endpoint internal dari penyalahgunaan.
+- Gunakan validasi input berbasis schema.
+- Hindari kebocoran token melalui log.
+- Terapkan kebijakan CORS dan origin yang sesuai.
+- Jangan mempercayai rating, hasil pertandingan, jam, atau langkah dari klien.
+- Cegah pembaruan rating dan penyimpanan hasil ganda.
+- Jangan mengizinkan satu pengguna mengirim langkah atas nama lawan.
+
+Jika menggunakan database langsung dari klien, dokumentasikan kebijakan RLS setiap tabel. Jika akses hanya melalui backend, gunakan kredensial server dengan hak akses minimum.
+
+## 17. Testing dan kualitas
+
+### Unit test
+
+Uji:
+
+- Aturan catur dan status akhir.
+- Validasi langkah.
+- Perhitungan ELO.
+- Kontrol waktu.
+- Penentuan giliran.
+- Validasi payload.
+- Parsing FEN dan PGN.
+- Validasi puzzle.
+
+### Integration test
+
+Uji:
+
+- Autentikasi.
+- Membuat dan bergabung ke room.
+- Dua klien memainkan langkah bergantian.
+- Penolakan langkah ilegal.
+- Sinkronisasi setelah reconnect.
+- Hasil pertandingan dan pembaruan rating.
+- Chat dan rate limiting.
+- Kegagalan API eksternal.
+
+### End-to-end test
+
+Gunakan Playwright untuk skenario:
+
+1. Pengguna membuat akun dan login.
+2. Pengguna membuat room.
+3. Pemain kedua bergabung menggunakan kode.
+4. Kedua pemain memainkan langkah legal.
+5. Langkah terlihat di kedua browser.
+6. Permainan berakhir.
+7. Hasil tersimpan.
+8. Rating diperbarui sesuai aturan.
+9. Pertandingan muncul di riwayat.
+10. Pengguna bermain melawan bot.
+
+Tambahkan test pada layar desktop dan mobile.
+
+Pastikan `typecheck`, lint, unit test, integration test, dan production build berjalan sebelum menyatakan tahap selesai.
+
+## 18. Deployment dan environment
+
+### Frontend
+
+Deploy Next.js ke platform yang mendukung Next.js, misalnya Vercel.
+
+### Game server
+
+Deploy server Socket.IO ke layanan yang mendukung proses Node.js persisten, WebSocket, koneksi masuk, dan konfigurasi jaringan yang dibutuhkan.
+
+Jangan mengasumsikan deployment serverless standar mendukung koneksi WebSocket persisten tanpa batas.
+
+### Database dan autentikasi
+
+Konfigurasikan Supabase untuk PostgreSQL dan Auth.
+
+### Environment variables
+
+Sediakan `.env.example` dengan nama variabel yang diperlukan, misalnya:
+
+```env
+NEXT_PUBLIC_APP_URL=
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+DATABASE_URL=
+GAME_SERVER_URL=
+ALLOWED_WEB_ORIGIN=
+LICHESS_API_BASE_URL=
+```
+
+Tambahkan variabel Stockfish hanya jika memang dibutuhkan oleh implementasi yang dipilih.
+
+Variabel di atas adalah template konfigurasi, bukan kredensial nyata. Tentukan penggunaan setiap variabel, pisahkan konfigurasi publik dan rahasia, dan jangan mengisi secret palsu yang tampak seperti kredensial aktif.
+
+Konfigurasikan domain, HTTPS, CORS, health check, log, monitoring, backup database, serta penanganan error.
+
+Pastikan frontend dan game server menggunakan URL produksi yang benar, bukan `localhost`.
+
+## 19. Tahapan implementasi
+
+Kerjakan secara bertahap. Jangan membuat semua fitur sekaligus tanpa pengujian.
+
+### Tahap 1: Perencanaan
+
+- Audit kebutuhan.
+- Verifikasi dokumentasi dependensi.
+- Tentukan arsitektur.
+- Tentukan kontrak event multiplayer.
+- Rancang schema database.
+- Buat daftar risiko teknis.
+- Tetapkan kriteria selesai setiap tahap.
+
+Deliverable: dokumen arsitektur, daftar dependensi, schema awal, dan rencana implementasi.
+
+### Tahap 2: Fondasi proyek
+
+- Buat workspace dan struktur folder.
+- Pasang dependensi.
+- Konfigurasikan TypeScript, lint, dan test.
+- Buat design tokens.
+- Buat layout dasar dan navigasi.
+- Konfigurasikan environment variables.
+
+Deliverable: aplikasi dapat dijalankan lokal dan production build awal berhasil.
+
+### Tahap 3: Papan catur 3D
+
+- Bangun papan dan 32 bidak.
+- Tambahkan material kayu.
+- Implementasikan kamera.
+- Buat interaksi pilih bidak dan petak.
+- Integrasikan `chess.js`.
+- Tambahkan highlight langkah legal.
+- Uji promosi, rokade, dan kondisi khusus.
+
+Deliverable: permainan lokal yang dapat dimainkan secara legal.
+
+### Tahap 4: Akun dan database
+
+- Implementasikan autentikasi.
+- Buat profil.
+- Jalankan migration.
+- Buat halaman dashboard.
+- Buat riwayat dan model pertandingan.
+
+Deliverable: data akun dan pertandingan dapat disimpan dengan aman.
+
+### Tahap 5: Backend multiplayer
+
+- Implementasikan server Socket.IO.
+- Buat room dan invitation link.
+- Validasi identitas dan langkah di server.
+- Implementasikan jam dan sinkronisasi.
+- Tambahkan reconnect dan state recovery.
+- Uji dua browser terpisah.
+
+Deliverable: dua pemain berbeda dapat memainkan pertandingan yang sama melalui internet.
+
+### Tahap 6: Rating, chat, dan matchmaking
+
+- Implementasikan rating ELO.
+- Tambahkan chat.
+- Buat antrean matchmaking.
+- Tambahkan penanganan disconnect.
+- Simpan hasil secara idempoten.
+
+Deliverable: fitur sosial dan kompetitif berfungsi tanpa pembaruan data ganda.
+
+### Tahap 7: Bot dan puzzle
+
+- Integrasikan Stockfish.
+- Buat Web Worker.
+- Implementasikan tingkat kesulitan.
+- Bangun puzzle runner.
+- Integrasikan Lichess API atau sumber puzzle yang sesuai.
+- Tangani rate limit dan kegagalan layanan.
+
+Deliverable: mode bot dan puzzle dapat dimainkan.
+
+### Tahap 8: Penyempurnaan
+
+- Animasi bidak.
+- Responsivitas.
+- Optimasi scene 3D.
+- Aksesibilitas.
+- Error handling.
+- Loading dan empty states.
+- Monitoring.
+
+Deliverable: pengalaman pengguna konsisten pada perangkat yang didukung.
+
+### Tahap 9: Pengujian dan deployment
+
+- Jalankan seluruh test.
+- Uji keamanan.
+- Uji reconnect dan kondisi jaringan buruk.
+- Jalankan production build.
+- Deploy frontend dan game server.
+- Konfigurasikan database produksi.
+- Uji smoke test setelah deployment.
+- Dokumentasikan rollback dan pemulihan.
+
+Deliverable: aplikasi online yang dapat diakses dan dimainkan dari dua perangkat berbeda.
+
+## 20. Kriteria selesai
+
+Proyek hanya dinyatakan selesai jika:
+
+- [ ] Papan dan bidak 3D tampil dengan benar.
+- [ ] Pengguna dapat memainkan catur dengan aturan legal.
+- [ ] Room dapat dibuat dan diikuti melalui tautan atau kode.
+- [ ] Dua pemain dapat bertanding melalui internet.
+- [ ] Langkah tersinkronisasi dan divalidasi server.
+- [ ] Jam pertandingan konsisten.
+- [ ] Rekoneksi tidak merusak state pertandingan.
+- [ ] Skakmat, remis, promosi, rokade, dan en passant bekerja.
+- [ ] Mode bot berjalan menggunakan engine nyata.
+- [ ] Akun dan profil tersimpan.
+- [ ] Rating diperbarui satu kali untuk hasil yang valid.
+- [ ] Chat dapat digunakan dan dibatasi dengan aman.
+- [ ] Riwayat pertandingan dapat dibuka dan diputar ulang.
+- [ ] Puzzle dapat dimainkan dan divalidasi.
+- [ ] Integrasi Lichess menggunakan endpoint terdokumentasi.
+- [ ] Tidak ada secret yang terekspos di frontend.
+- [ ] Tidak ada tombol utama yang sekadar dekorasi.
+- [ ] Tidak ada data demo yang disamarkan sebagai data produksi.
+- [ ] Production build dan pengujian utama berhasil.
+- [ ] Website dan game server berjalan di deployment produksi.
+
+## 21. Instruksi kerja untuk AI coding agent
+
+Bekerjalah seperti engineer yang membangun produk nyata, bukan generator template.
+
+Aturan kerja:
+
+1. Mulai dengan memeriksa repository dan kondisi proyek saat ini.
+2. Jangan menghapus atau menimpa pekerjaan yang sudah ada tanpa alasan yang jelas.
+3. Jika repository kosong, siapkan proyek dari awal dengan struktur yang konsisten.
+4. Sebelum memasang dependensi, periksa dokumentasi dan kompatibilitas versi.
+5. Implementasikan fitur dalam tahap yang dapat dijalankan dan diuji.
+6. Setelah setiap tahap, jalankan typecheck, lint, test, dan build yang relevan.
+7. Perbaiki error sebelum melanjutkan ke fitur berikutnya.
+8. Berikan kode lengkap yang diperlukan, bukan pseudocode untuk fitur inti.
+9. Jangan menggunakan mock data sebagai pengganti backend yang seharusnya sudah berfungsi.
+10. Jangan mengarang endpoint, environment variable, schema respons, atau kemampuan API.
+11. Jika layanan eksternal membutuhkan akun atau konfigurasi manual, dokumentasikan langkah tersebut secara jelas.
+12. Jika terdapat keterbatasan teknis, jelaskan dan pilih solusi yang dapat dijalankan.
+13. Jangan mengubah stack utama tanpa alasan teknis yang kuat.
+14. Jangan mengklaim pengujian berhasil jika belum dijalankan.
+15. Pertahankan desain dan fitur yang sudah bekerja ketika melakukan perubahan.
+
+Pada akhir setiap tahap, laporkan:
+- File yang dibuat atau diubah.
+- Fitur yang benar-benar selesai.
+- Perintah untuk menjalankan dan menguji.
+- Hasil pengujian aktual.
+- Environment variable yang diperlukan.
+- Kendala yang masih ada.
+- Langkah berikutnya.
+
+**Mulai dari Tahap 1.** Audit repository, verifikasi dokumentasi resmi, buat rencana implementasi yang konkret, lalu kerjakan tahap demi tahap. Jangan langsung menghasilkan seluruh proyek dalam satu respons panjang yang tidak dapat diverifikasi.

@@ -1,0 +1,6 @@
+{
+  "name": "Classic Chess 3D",
+  "description": "Permainan catur 3D klasik bergaya Staunton dengan aturan FIDE lengkap dan room multiplayer real-time tersinkronisasi.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,58 @@
+import type { Metadata } from 'next';
+import { Cormorant_Garamond, Plus_Jakarta_Sans, JetBrains_Mono } from 'next/font/google';
+import './globals.css';
+
+const cormorant = Cormorant_Garamond({
+  subsets: ['latin'],
+  weight: ['600', '700'],
+  variable: '--font-cormorant',
+  display: 'swap',
+});
+
+const jakarta = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-jakarta',
+  display: 'swap',
+});
+
+const jetbrains = JetBrains_Mono({
+  subsets: ['latin'],
+  weight: ['400', '500', '600'],
+  variable: '--font-jetbrains',
+  display: 'swap',
+});
+
+export const metadata: Metadata = {
+  title: 'Classic Chess 3D',
+  description:
+    'Permainan catur 3D klasik bergaya Staunton dengan aturan FIDE lengkap dan room multiplayer real-time tersinkronisasi.',
+  openGraph: {
+    title: 'Classic Chess 3D',
+    description:
+      'Permainan catur 3D klasik bergaya Staunton dengan aturan FIDE lengkap dan room multiplayer real-time tersinkronisasi.',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Classic Chess 3D',
+    description:
+      'Permainan catur 3D klasik bergaya Staunton dengan aturan FIDE lengkap dan room multiplayer real-time tersinkronisasi.',
+  },
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html
+      lang="id"
+      className={`${cormorant.variable} ${jakarta.variable} ${jetbrains.variable}`}
+    >
+      <body
+        suppressHydrationWarning
+        className="bg-[#171513] text-[#F2E9DC] font-sans antialiased selection:bg-[#C7A66A] selection:text-[#171513]"
+      >
+        {children}
+      </body>
+    </html>
+  );
+}
