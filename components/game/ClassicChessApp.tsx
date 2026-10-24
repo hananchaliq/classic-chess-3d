@@ -141,6 +141,14 @@ export default function ClassicChessApp() {
   const updateVisualSettings = useCallback((partial: Partial<ArenaVisualSettings>) => {
     setVisualSettings((prev) => {
       const next = { ...prev, ...partial };
+      if (partial.graphicsQuality && partial.shadows === undefined) {
+        next.shadows =
+          partial.graphicsQuality === 'low'
+            ? 'off'
+            : partial.graphicsQuality === 'medium'
+            ? 'low'
+            : 'high';
+      }
       if (partial.ambientSound !== undefined) {
         setChamberAmbientSound(partial.ambientSound);
       }
@@ -598,8 +606,8 @@ export default function ClassicChessApp() {
     let cancelled = false;
     queueMicrotask(() => setBotThinking(true));
 
-    // Give a brief natural pause (longer if a capture duel just occurred)
-    const delayMs = localLastCaptureDuel ? 1150 : 420;
+    // Give a brief natural pause after the player's 3D move animation completes
+    const delayMs = localLastCaptureDuel ? 1150 : 560;
     const timer = setTimeout(async () => {
       if (cancelled) return;
       const botDecision = await computeBotMoveAsync(localFen, botDifficulty);

@@ -131,63 +131,70 @@ export function createChessMaterialSet(
 ): ChessMaterialSet {
   const maxAniso = renderer.capabilities.getMaxAnisotropy();
 
-  const mapleTex = createProceduralWoodTexture('#E7D5B5', '#C7B08B', maxAniso, 1.0);
-  const walnutSquareTex = createProceduralWoodTexture('#9A6A45', '#684327', maxAniso, 1.2);
-  const darkWalnutFrameTex = createProceduralWoodTexture('#38251C', '#1F130D', maxAniso, 0.8);
-  const mediumWoodTex = createProceduralWoodTexture('#79543A', '#4E3320', maxAniso, 1.1);
-  const ivoryTex = createProceduralWoodTexture('#F2E9DC', '#DFCCB5', maxAniso, 0.5);
-  const ebonyTex = createProceduralWoodTexture('#2B1B13', '#140B07', maxAniso, 1.4);
+  const mapleTex = createProceduralWoodTexture('#C8B492', '#A8916D', maxAniso, 1.0);
+  const walnutSquareTex = createProceduralWoodTexture('#6E492D', '#4A2E19', maxAniso, 1.2);
+  const darkWalnutFrameTex = createProceduralWoodTexture('#2B1C14', '#160D09', maxAniso, 0.8);
+  const mediumWoodTex = createProceduralWoodTexture('#5E402B', '#3D2718', maxAniso, 1.1);
+  const ivoryTex = createProceduralWoodTexture('#DFD3C0', '#C4B39B', maxAniso, 0.5);
+  const ebonyTex = createProceduralWoodTexture('#221610', '#110906', maxAniso, 1.4);
   const marbleFloorTex = createMarbleFloorTexture(maxAniso);
 
   const mapleSquare = new THREE.MeshStandardMaterial({
     map: mapleTex,
-    roughness: 0.34,
+    roughness: 0.48,
     metalness: 0.02,
+    envMapIntensity: 0.24,
   });
 
   const walnutSquare = new THREE.MeshStandardMaterial({
     map: walnutSquareTex,
-    roughness: 0.36,
+    roughness: 0.5,
     metalness: 0.03,
+    envMapIntensity: 0.24,
   });
 
   const walnutFrame = new THREE.MeshPhysicalMaterial({
     map: darkWalnutFrameTex,
-    roughness: 0.26,
+    roughness: 0.36,
     metalness: 0.05,
-    clearcoat: isSoftwareGl ? 0 : 0.45,
-    clearcoatRoughness: 0.2,
+    clearcoat: isSoftwareGl ? 0 : 0.25,
+    clearcoatRoughness: 0.28,
+    envMapIntensity: 0.28,
   });
 
   const mediumWoodPlinth = new THREE.MeshStandardMaterial({
     map: mediumWoodTex,
-    roughness: 0.4,
+    roughness: 0.45,
     metalness: 0.04,
+    envMapIntensity: 0.25,
   });
 
   const brassInlay = new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color('#C7A66A'),
-    roughness: 0.2,
-    metalness: 0.88,
-    anisotropy: isSoftwareGl ? 0 : 0.65,
+    color: new THREE.Color('#B89658'),
+    roughness: 0.28,
+    metalness: 0.82,
+    anisotropy: isSoftwareGl ? 0 : 0.5,
+    envMapIntensity: 0.35,
   });
 
   const whiteIvoryPiece = new THREE.MeshPhysicalMaterial({
     map: ivoryTex,
-    color: new THREE.Color('#F5EDE0'),
-    roughness: 0.22,
+    color: new THREE.Color('#DFD3C0'),
+    roughness: 0.34,
     metalness: 0.03,
-    clearcoat: isSoftwareGl ? 0 : 0.55,
-    clearcoatRoughness: 0.16,
+    clearcoat: isSoftwareGl ? 0 : 0.25,
+    clearcoatRoughness: 0.24,
+    envMapIntensity: 0.3,
   });
 
   const blackEbonyPiece = new THREE.MeshPhysicalMaterial({
     map: ebonyTex,
-    color: new THREE.Color('#342117'),
-    roughness: 0.25,
+    color: new THREE.Color('#261811'),
+    roughness: 0.32,
     metalness: 0.08,
-    clearcoat: isSoftwareGl ? 0 : 0.6,
-    clearcoatRoughness: 0.18,
+    clearcoat: isSoftwareGl ? 0 : 0.35,
+    clearcoatRoughness: 0.22,
+    envMapIntensity: 0.35,
   });
 
   const greenBaizeFelt = new THREE.MeshStandardMaterial({
@@ -293,11 +300,11 @@ export function createChessMaterialSet(
     color: new THREE.Color('#FFF4D9'),
   });
 
-  // Board Highlights
+  // Board Highlights (Clear & readable without harsh glare)
   const selectedHighlight = new THREE.MeshBasicMaterial({
-    color: new THREE.Color('#C7A66A'),
+    color: new THREE.Color('#38BDF8'),
     transparent: true,
-    opacity: 0.45,
+    opacity: 0.38,
     depthWrite: false,
     polygonOffset: true,
     polygonOffsetFactor: -1,
@@ -305,9 +312,9 @@ export function createChessMaterialSet(
   });
 
   const lastMoveHighlight = new THREE.MeshBasicMaterial({
-    color: new THREE.Color('#D4A359'),
+    color: new THREE.Color('#D99B26'),
     transparent: true,
-    opacity: 0.28,
+    opacity: 0.32,
     depthWrite: false,
     polygonOffset: true,
     polygonOffsetFactor: -1,
@@ -315,9 +322,9 @@ export function createChessMaterialSet(
   });
 
   const hintHighlight = new THREE.MeshBasicMaterial({
-    color: new THREE.Color('#48BB78'),
+    color: new THREE.Color('#10B981'),
     transparent: true,
-    opacity: 0.42,
+    opacity: 0.38,
     depthWrite: false,
     polygonOffset: true,
     polygonOffsetFactor: -1,
@@ -325,30 +332,32 @@ export function createChessMaterialSet(
   });
 
   const legalMoveDot = new THREE.MeshStandardMaterial({
-    color: new THREE.Color('#C7A66A'),
-    emissive: new THREE.Color('#8A6D3B'),
-    emissiveIntensity: 0.35,
-    roughness: 0.25,
-    metalness: 0.6,
+    color: new THREE.Color('#38BDF8'),
+    emissive: new THREE.Color('#0284C7'),
+    emissiveIntensity: 0.42,
+    roughness: 0.3,
+    metalness: 0.2,
     transparent: true,
     opacity: 0.88,
   });
 
   const legalCaptureRing = new THREE.MeshStandardMaterial({
-    color: new THREE.Color('#E09F3E'),
-    emissive: new THREE.Color('#9E5A14'),
-    emissiveIntensity: 0.45,
-    roughness: 0.25,
-    metalness: 0.7,
+    color: new THREE.Color('#E11D48'),
+    emissive: new THREE.Color('#9F1239'),
+    emissiveIntensity: 0.48,
+    roughness: 0.28,
+    metalness: 0.3,
     transparent: true,
-    opacity: 0.92,
+    opacity: 0.9,
+    side: THREE.DoubleSide,
   });
 
   const checkAlertRing = new THREE.MeshBasicMaterial({
-    color: new THREE.Color('#D9534F'),
+    color: new THREE.Color('#FF2A2A'),
     transparent: true,
-    opacity: 0.75,
+    opacity: 0.88,
     depthWrite: false,
+    side: THREE.DoubleSide,
     polygonOffset: true,
     polygonOffsetFactor: -2,
     polygonOffsetUnits: -2,

@@ -44,7 +44,7 @@ export const BOT_DIFFICULTY_PRESETS: Record<BotDifficultyId, BotDifficultyPreset
     id: 'grandmaster',
     name: 'Arch-Grandmaster',
     eloEstimate: 2200,
-    depth: 4,
+    depth: 3,
     randomness: 0,
     description: 'Kalkulasi terdalam tanpa kompromi. Menghukum setiap kesalahan taktis.',
   },
@@ -208,12 +208,16 @@ function minimaxAlphaBeta(
     return evaluateChessInstanceCp(chess);
   }
 
-  const moves = chess.moves({ verbose: true });
-  moves.sort((a, b) => scoreMoveOrdering(b) - scoreMoveOrdering(a));
+  const allMoves = chess.moves({ verbose: true });
+  allMoves.sort((a, b) => scoreMoveOrdering(b) - scoreMoveOrdering(a));
+
+  // Cap search width at deeper plies so low-end CPU cores never stall
+  const limit = depth >= 2 ? Math.min(allMoves.length, 16) : Math.min(allMoves.length, 12);
 
   if (maximizingWhite) {
     let maxEval = -Infinity;
-    for (const move of moves) {
+    for (let i = 0; i < limit; i++) {
+      const move = allMoves[i];
       chess.move(move);
       const evaluation = minimaxAlphaBeta(chess, depth - 1, alpha, beta, false);
       chess.undo();
@@ -224,7 +228,8 @@ function minimaxAlphaBeta(
     return maxEval;
   } else {
     let minEval = Infinity;
-    for (const move of moves) {
+    for (let i = 0; i < limit; i++) {
+      const move = allMoves[i];
       chess.move(move);
       const evaluation = minimaxAlphaBeta(chess, depth - 1, alpha, beta, true);
       chess.undo();
@@ -273,8 +278,12 @@ function describeTacticalReason(move: Move, resultingCheck: boolean, resultingMa
   return `Aktifkan ${actor} menuju ${move.to} untuk memperkuat koordinasi pertahanan dan ruang gerak.`;
 }
 
+function yieldToMainThread(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 /**
- * Computes the best move or difficulty-adjusted bot move asynchronously so the 3D render loop stays smooth.
+ * Time-sliced non-blocking Bot AI search so the 3D render loop never drops a frame on low-end laptops.
  */
 export async function computeBotMoveAsync(
   fen: string,
@@ -286,109 +295,122 @@ export async function computeBotMoveAsync(
   san: string;
   evaluationCp: number;
 } | null> {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      try {
-        const chess = new Chess(fen);
-        const legalMoves = chess.moves({ verbose: true });
-        if (legalMoves.length === 0) {
-          resolve(null);
-          return;
-        }
+  await yieldToMainThread();
+  try {
+    const chess = new Chess(fen);
+    const legalMoves = chess.moves({ verbose: true });
+    if (legalMoves.length === 0) {
+      return null;
+    }
 
-        const preset = BOT_DIFFICULTY_PRESETS[difficultyId];
-        const isWhiteTurn = chess.turn() === 'w';
+    const preset = BOT_DIFFICULTY_PRESETS[difficultyId];
+    const isWhiteTurn = chess.turn() === 'w';
 
-        // Order moves for faster pruning
-        legalMoves.sort((a, b) => scoreMoveOrdering(b) - scoreMoveOrdering(a));
+    // Order moves for faster alpha-beta pruning
+    legalMoves.sort((a, b) => scoreMoveOrdering(b) - scoreMoveOrdering(a));
 
-        const scoredMoves: { move: Move; score: number }[] = [];
+    const scoredMoves: { move: Move; score: number }[] = [];
+    let sliceStart = performance.now();
 
-        for (const m of legalMoves) {
-          chess.move(m);
-          const score = minimaxAlphaBeta(
-            chess,
-            Math.max(0, preset.depth - 1),
-            -Infinity,
-            Infinity,
-            !isWhiteTurn
-          );
-          chess.undo();
-          scoredMoves.push({ move: m, score });
-        }
+    let rootAlpha = -Infinity;
+    let rootBeta = Infinity;
 
-        // Sort from current player's perspective (best first)
-        scoredMoves.sort((a, b) => (isWhiteTurn ? b.score - a.score : a.score - b.score));
-
-        let chosen = scoredMoves[0];
-
-        // Inject controlled human-like variance on lower difficulties
-        if (preset.randomness > 0 && scoredMoves.length > 1 && Math.random() < preset.randomness) {
-          const poolSize = Math.min(scoredMoves.length, difficultyId === 'beginner' ? 4 : 3);
-          const idx = Math.floor(Math.random() * poolSize);
-          chosen = scoredMoves[idx];
-        }
-
-        resolve({
-          from: chosen.move.from as Square,
-          to: chosen.move.to as Square,
-          promotion: (chosen.move.promotion as 'q' | 'r' | 'b' | 'n' | undefined) ?? undefined,
-          san: chosen.move.san,
-          evaluationCp: chosen.score,
-        });
-      } catch {
-        resolve(null);
+    for (let i = 0; i < legalMoves.length; i++) {
+      // Yield every 5ms so requestAnimationFrame stays locked at 60 FPS
+      if (performance.now() - sliceStart > 5) {
+        await yieldToMainThread();
+        sliceStart = performance.now();
       }
-    }, 40);
-  });
+
+      const m = legalMoves[i];
+      chess.move(m);
+      const score = minimaxAlphaBeta(
+        chess,
+        Math.max(0, preset.depth - 1),
+        rootAlpha,
+        rootBeta,
+        !isWhiteTurn
+      );
+      chess.undo();
+      scoredMoves.push({ move: m, score });
+
+      if (preset.randomness === 0) {
+        if (isWhiteTurn && score > rootAlpha) rootAlpha = score;
+        if (!isWhiteTurn && score < rootBeta) rootBeta = score;
+      }
+    }
+
+    // Sort from current player's perspective (best first)
+    scoredMoves.sort((a, b) => (isWhiteTurn ? b.score - a.score : a.score - b.score));
+
+    let chosen = scoredMoves[0];
+
+    // Inject controlled human-like variance on lower difficulties
+    if (preset.randomness > 0 && scoredMoves.length > 1 && Math.random() < preset.randomness) {
+      const poolSize = Math.min(scoredMoves.length, difficultyId === 'beginner' ? 4 : 3);
+      const idx = Math.floor(Math.random() * poolSize);
+      chosen = scoredMoves[idx];
+    }
+
+    return {
+      from: chosen.move.from as Square,
+      to: chosen.move.to as Square,
+      promotion: (chosen.move.promotion as 'q' | 'r' | 'b' | 'n' | undefined) ?? undefined,
+      san: chosen.move.san,
+      evaluationCp: chosen.score,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**
- * Computes a tactical hint for the active player with an Indonesian explanation.
+ * Time-sliced tactical hint calculator with Indonesian explanation.
  */
 export async function computeTacticalHintAsync(fen: string): Promise<BotHintResult | null> {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      try {
-        const chess = new Chess(fen);
-        const legalMoves = chess.moves({ verbose: true });
-        if (legalMoves.length === 0) {
-          resolve(null);
-          return;
-        }
+  await yieldToMainThread();
+  try {
+    const chess = new Chess(fen);
+    const legalMoves = chess.moves({ verbose: true });
+    if (legalMoves.length === 0) {
+      return null;
+    }
 
-        const isWhiteTurn = chess.turn() === 'w';
-        legalMoves.sort((a, b) => scoreMoveOrdering(b) - scoreMoveOrdering(a));
+    const isWhiteTurn = chess.turn() === 'w';
+    legalMoves.sort((a, b) => scoreMoveOrdering(b) - scoreMoveOrdering(a));
 
-        let bestMove = legalMoves[0];
-        let bestScore = isWhiteTurn ? -Infinity : Infinity;
+    let bestMove = legalMoves[0];
+    let bestScore = isWhiteTurn ? -Infinity : Infinity;
+    let sliceStart = performance.now();
 
-        for (const m of legalMoves) {
-          chess.move(m);
-          const score = minimaxAlphaBeta(chess, 2, -Infinity, Infinity, !isWhiteTurn);
-          chess.undo();
-
-          if (isWhiteTurn ? score > bestScore : score < bestScore) {
-            bestScore = score;
-            bestMove = m;
-          }
-        }
-
-        chess.move(bestMove);
-        const resultingCheck = chess.inCheck();
-        const resultingMate = chess.isCheckmate();
-        chess.undo();
-
-        resolve({
-          from: bestMove.from as Square,
-          to: bestMove.to as Square,
-          san: bestMove.san,
-          evaluationCp: bestScore,
-          explanation: describeTacticalReason(bestMove, resultingCheck, resultingMate),
-        });
-      } catch {
-        resolve(null);
+    for (const m of legalMoves) {
+      if (performance.now() - sliceStart > 5) {
+        await yieldToMainThread();
+        sliceStart = performance.now();
       }
-    }, 25);
-  });
+      chess.move(m);
+      const score = minimaxAlphaBeta(chess, 2, -Infinity, Infinity, !isWhiteTurn);
+      chess.undo();
+
+      if (isWhiteTurn ? score > bestScore : score < bestScore) {
+        bestScore = score;
+        bestMove = m;
+      }
+    }
+
+    chess.move(bestMove);
+    const resultingCheck = chess.inCheck();
+    const resultingMate = chess.isCheckmate();
+    chess.undo();
+
+    return {
+      from: bestMove.from as Square,
+      to: bestMove.to as Square,
+      san: bestMove.san,
+      evaluationCp: bestScore,
+      explanation: describeTacticalReason(bestMove, resultingCheck, resultingMate),
+    };
+  } catch {
+    return null;
+  }
 }

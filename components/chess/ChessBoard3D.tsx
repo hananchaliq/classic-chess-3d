@@ -8,6 +8,7 @@ import type {
   ArenaVisualSettings,
   BoardPiece,
   CaptureDuelEvent,
+  GraphicsQualityPreset,
   LegalMoveOption,
   PieceColor,
   PieceSymbol,
@@ -28,6 +29,14 @@ import {
   type LivingCharacterRig,
 } from '../../lib/chess-3d/living-characters.ts';
 import {
+  preloadPieceGlbAssets,
+  preloadCathedralGlbAsset,
+  buildCathedralEnvironmentInstance,
+  buildGlbPieceInstance,
+  type GlbPieceInstance,
+  type CathedralSceneInstance,
+} from '../../lib/chess-3d/glb-assets.ts';
+import {
   Camera,
   RotateCcw,
   FlipHorizontal2,
@@ -37,6 +46,7 @@ import {
   Swords,
   Crown,
   Search,
+  Navigation,
 } from 'lucide-react';
 
 export type CameraViewPreset = 'white' | 'black' | 'top' | 'cinema' | 'inspection';
@@ -58,11 +68,17 @@ interface ChessBoard3DProps {
   onUpdateVisualSettings?: (partial: Partial<ArenaVisualSettings>) => void;
 }
 
-// Module-level pre-allocated vectors to avoid GC inside render loop
+// Module-level pre-allocated math objects to guarantee zero GC inside the render & input loops
 const _camTargetPos = new THREE.Vector3();
 const _camLookAtPos = new THREE.Vector3(0, 0, 0);
 const _planeIntersect = new THREE.Vector3();
+const _boardHitVec = new THREE.Vector3();
+const _boxHitVec = new THREE.Vector3();
+const _pieceHitBox = new THREE.Box3();
 const _dragBoardPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.25);
+const _boardSurfacePlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.036);
+const _upVec = new THREE.Vector3(0, 1, 0);
+const _instanceMatrix = new THREE.Matrix4();
 
 const UNICODE_PIECES: Record<PieceColor, Record<PieceSymbol, string>> = {
   w: { k: '♔', q: '♕', r: '♖', b: '♗', n: '♘', p: '♙' },
@@ -78,6 +94,22 @@ const CHARACTER_CLASS_NAMES: Record<PieceSymbol, string> = {
   p: 'Infanteri Pion',
 };
 
+const PIECE_HITBOX_HEIGHTS: Record<PieceSymbol, number> = {
+  p: 0.92,
+  r: 1.15,
+  n: 1.25,
+  b: 1.28,
+  q: 1.32,
+  k: 1.38,
+};
+
+const QUALITY_LABELS: Record<GraphicsQualityPreset, string> = {
+  low: 'LOW (Hemat/Kentang)',
+  medium: 'MEDIUM',
+  high: 'HIGH',
+  ultra: 'ULTRA (Realistis)',
+};
+
 function squareToWorldXZ(square: string): { x: number; z: number } {
   const { fileIndex, rankIndex } = squareToIndices(square);
   return {
@@ -86,15 +118,19 @@ function squareToWorldXZ(square: string): { x: number; z: number } {
   };
 }
 
+function easeInOutCubic(t: number): number {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
 function createCoordinateFrameTexture(maxAniso: number): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
-  canvas.width = 1024;
-  canvas.height = 1024;
+  canvas.width = 512;
+  canvas.height = 512;
   const ctx = canvas.getContext('2d');
   if (ctx) {
-    ctx.clearRect(0, 0, 1024, 1024);
-    ctx.fillStyle = '#C7A66A';
-    ctx.font = '600 28px "Cormorant Garamond", Georgia, serif';
+    ctx.clearRect(0, 0, 512, 512);
+    ctx.fillStyle = '#E5B85B';
+    ctx.font = '700 16px "Cormorant Garamond", Georgia, serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
@@ -102,25 +138,25 @@ function createCoordinateFrameTexture(maxAniso: number): THREE.CanvasTexture {
     const ranks = ['8', '7', '6', '5', '4', '3', '2', '1'];
 
     for (let i = 0; i < 8; i++) {
-      const center = 96 + i * 104 + 52;
-      ctx.fillText(files[i], center, 976);
+      const center = 36 + i * 55 + 27.5;
+      ctx.fillText(files[i], center, 494);
       ctx.save();
-      ctx.translate(center, 48);
+      ctx.translate(center, 18);
       ctx.rotate(Math.PI);
       ctx.fillText(files[i], 0, 0);
       ctx.restore();
 
-      ctx.fillText(ranks[i], 48, center);
+      ctx.fillText(ranks[i], 18, center);
       ctx.save();
-      ctx.translate(976, center);
+      ctx.translate(494, center);
       ctx.rotate(Math.PI);
       ctx.fillText(ranks[i], 0, 0);
       ctx.restore();
     }
 
-    ctx.strokeStyle = '#C7A66A';
-    ctx.lineWidth = 4;
-    ctx.strokeRect(92, 92, 840, 840);
+    ctx.strokeStyle = '#C49A45';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(34, 34, 444, 444);
   }
 
   const tex = new THREE.CanvasTexture(canvas);
@@ -130,6 +166,92 @@ function createCoordinateFrameTexture(maxAniso: number): THREE.CanvasTexture {
   return tex;
 }
 
+/**
+ * Creates a clear 3D arched trajectory ribbon + directional arrowhead cone
+ * from `fromSquare` to `toSquare` so piece movements are immediately visible.
+ */
+function create3DTrajectoryArrow(
+  fromSq: string,
+  toSq: string,
+  colorHex: string,
+  opacity = 0.85,
+  arcHeight = 0.36
+): THREE.Group {
+  const group = new THREE.Group();
+  const { x: x1, z: z1 } = squareToWorldXZ(fromSq);
+  const { x: x2, z: z2 } = squareToWorldXZ(toSq);
+
+  const dx = x2 - x1;
+  const dz = z2 - z1;
+  const dist = Math.hypot(dx, dz);
+  if (dist < 0.05) return group;
+
+  const dirX = dx / dist;
+  const dirZ = dz / dist;
+
+  const endX = x2 - dirX * 0.22;
+  const endZ = z2 - dirZ * 0.22;
+
+  const startPt = new THREE.Vector3(x1, 0.07, z1);
+  const midPt = new THREE.Vector3(
+    (x1 + endX) * 0.5,
+    0.09 + Math.min(0.62, arcHeight + dist * 0.06),
+    (z1 + endZ) * 0.5
+  );
+  const endPt = new THREE.Vector3(endX, 0.14, endZ);
+
+  const curve = new THREE.QuadraticBezierCurve3(startPt, midPt, endPt);
+  const tubeGeo = new THREE.TubeGeometry(curve, 14, 0.04, 6, false);
+  const tubeMat = new THREE.MeshBasicMaterial({
+    color: colorHex,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+  });
+  const tubeMesh = new THREE.Mesh(tubeGeo, tubeMat);
+  tubeMesh.matrixAutoUpdate = false;
+  tubeMesh.updateMatrix();
+  group.add(tubeMesh);
+
+  const tangent = curve.getTangent(1).normalize();
+  const coneGeo = new THREE.ConeGeometry(0.125, 0.27, 10);
+  const coneMat = new THREE.MeshBasicMaterial({
+    color: colorHex,
+    transparent: true,
+    opacity: Math.min(1, opacity + 0.08),
+    depthWrite: false,
+  });
+  const coneMesh = new THREE.Mesh(coneGeo, coneMat);
+  coneMesh.position.copy(endPt);
+  coneMesh.quaternion.setFromUnitVectors(_upVec, tangent);
+  coneMesh.matrixAutoUpdate = false;
+  coneMesh.updateMatrix();
+  group.add(coneMesh);
+
+  const originRingGeo = new THREE.RingGeometry(0.18, 0.27, 18);
+  originRingGeo.rotateX(-Math.PI / 2);
+  const originRingMesh = new THREE.Mesh(originRingGeo, tubeMat);
+  originRingMesh.position.set(x1, 0.048, z1);
+  originRingMesh.matrixAutoUpdate = false;
+  originRingMesh.updateMatrix();
+  group.add(originRingMesh);
+
+  group.userData = { disposableArrow: true };
+  return group;
+}
+
+function disposeArrowGroup(group: THREE.Group) {
+  group.traverse((child) => {
+    const m = child as THREE.Mesh;
+    if (m.isMesh) {
+      m.geometry?.dispose();
+      if (m.material && !Array.isArray(m.material)) {
+        m.material.dispose();
+      }
+    }
+  });
+}
+
 interface AnimatedPieceEntry {
   key: string;
   type: PieceSymbol;
@@ -137,17 +259,25 @@ interface AnimatedPieceEntry {
   square: string;
   group: THREE.Group;
   rig: LivingCharacterRig | null;
+  glbPiece: GlbPieceInstance | null;
   currentX: number;
   currentZ: number;
   currentY: number;
+  moveStartX: number;
+  moveStartZ: number;
   targetX: number;
   targetZ: number;
+  moveStartTimeSec: number;
+  moveDurationSec: number;
+  isMoving: boolean;
   isKnightJump: boolean;
+  motionTrailRing: THREE.Mesh;
 }
 
 interface DefeatedDuelGhost {
   group: THREE.Group;
   rig: LivingCharacterRig | null;
+  glbPiece: GlbPieceInstance | null;
   impactRing: THREE.Mesh;
   startTimeSec: number;
   durationSec: number;
@@ -176,7 +306,13 @@ export default function ChessBoard3D({
     orientation === 'w' ? 'white' : 'black'
   );
   const [hudCollapsed, setHudCollapsed] = useState(false);
+  const [showMoveArrow, setShowMoveArrow] = useState(true);
   const [activeDuelBanner, setActiveDuelBanner] = useState<CaptureDuelEvent | null>(null);
+  const [loadingProgress, setLoadingProgress] = useState<{
+    loaded: number;
+    total: number;
+    label: string;
+  } | null>({ loaded: 0, total: 7, label: 'Infanteri Pion' });
 
   const lastProcessedDuelIdRef = useRef<string | null>(null);
 
@@ -193,6 +329,7 @@ export default function ChessBoard3D({
     onSquareSelect,
     onMoveAttempt,
     visualSettings,
+    showMoveArrow,
   });
 
   useEffect(() => {
@@ -209,6 +346,7 @@ export default function ChessBoard3D({
       onSquareSelect,
       onMoveAttempt,
       visualSettings,
+      showMoveArrow,
     };
   }, [
     fen,
@@ -223,11 +361,13 @@ export default function ChessBoard3D({
     onSquareSelect,
     onMoveAttempt,
     visualSettings,
+    showMoveArrow,
   ]);
 
-  const triggerSceneSyncRef = useRef<(() => void) | null>(null);
+  const triggerSceneSyncRef = useRef<((forceRebuildPieces?: boolean) => void) | null>(null);
   const triggerCameraPresetRef = useRef<((preset: CameraViewPreset) => void) | null>(null);
   const triggerDuelSequenceRef = useRef<((duel: CaptureDuelEvent) => void) | null>(null);
+  const applyQualitySettingsRef = useRef<(() => void) | null>(null);
 
   // Keep camera orientation synced when player flips board
   useEffect(() => {
@@ -241,9 +381,24 @@ export default function ChessBoard3D({
   // Trigger scene piece/highlight update whenever board state props change
   useEffect(() => {
     if (triggerSceneSyncRef.current) {
-      triggerSceneSyncRef.current();
+      triggerSceneSyncRef.current(false);
     }
-  }, [fen, selectedSquare, legalMoves, lastMove, hintMove, kingSquareInCheck, visualSettings.pieceStyle]);
+  }, [fen, selectedSquare, legalMoves, lastMove, hintMove, kingSquareInCheck, showMoveArrow]);
+
+  // Dynamically apply quality/shadow/pieceStyle changes WITHOUT tearing down the WebGL context
+  useEffect(() => {
+    if (applyQualitySettingsRef.current) {
+      applyQualitySettingsRef.current();
+    }
+    if (triggerSceneSyncRef.current) {
+      triggerSceneSyncRef.current(true);
+    }
+  }, [
+    visualSettings.pieceStyle,
+    visualSettings.graphicsQuality,
+    visualSettings.shadows,
+    visualSettings.showChamberRoom,
+  ]);
 
   // Trigger capture duel animation when a new capture event arrives
   useEffect(() => {
@@ -258,19 +413,23 @@ export default function ChessBoard3D({
       }
       const timer = setTimeout(() => {
         setActiveDuelBanner((prev) => (prev?.id === lastCaptureDuel.id ? null : prev));
-      }, 1600);
+      }, 2100);
       return () => clearTimeout(timer);
     }
   }, [lastCaptureDuel, visualSettings.cinematicCaptures]);
 
-  const isLowQuality = visualSettings.graphicsQuality === 'low';
   const pieceStyle = visualSettings.pieceStyle;
-  const shadowsEnabled = visualSettings.shadows !== 'off' && !isLowQuality;
 
   useEffect(() => {
     if (use2DBoard) return;
     const container = mountRef.current;
     if (!container) return;
+
+    let disposed = false;
+    let frameId = 0;
+    let renderBusy = false;
+    let renderDirty = false;
+    let lastFrameTime = performance.now();
 
     // 1. Software WebGL detection
     const isSoftwareGl = (() => {
@@ -291,7 +450,7 @@ export default function ChessBoard3D({
     let renderer: THREE.WebGLRenderer;
     try {
       renderer = new THREE.WebGLRenderer({
-        antialias: !isSoftwareGl && !isLowQuality,
+        antialias: !isSoftwareGl,
         powerPreference: 'high-performance',
       });
     } catch {
@@ -301,19 +460,7 @@ export default function ChessBoard3D({
 
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.12;
-    const maxDpr =
-      visualSettings.graphicsQuality === 'ultra'
-        ? 2
-        : visualSettings.graphicsQuality === 'high'
-        ? 1.75
-        : visualSettings.graphicsQuality === 'medium'
-        ? 1.25
-        : 1;
-    renderer.setPixelRatio(
-      isSoftwareGl ? 1 : Math.min(window.devicePixelRatio || 1, maxDpr)
-    );
-    renderer.shadowMap.enabled = !isSoftwareGl && shadowsEnabled;
+    renderer.toneMappingExposure = 0.82;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     const width = container.clientWidth || 800;
@@ -325,98 +472,124 @@ export default function ChessBoard3D({
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
 
-    // 2. Scene, Fog & Studio Environment
+    // 2. Scene, Fog & Subdued Studio Reflection Environment
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#14110F');
-    scene.fog = new THREE.FogExp2('#14110F', 0.022);
+    scene.background = new THREE.Color('#090706');
+    scene.fog = new THREE.FogExp2('#090706', 0.022);
 
     const pmremGenerator = new THREE.PMREMGenerator(renderer);
     const envTarget = pmremGenerator.fromScene(new RoomEnvironment(), 0.04);
     scene.environment = envTarget.texture;
+    if ('environmentIntensity' in scene) {
+      (scene as THREE.Scene & { environmentIntensity: number }).environmentIntensity = 0.25;
+    }
     pmremGenerator.dispose();
 
     // 3. Camera & OrbitControls
-    const camera = new THREE.PerspectiveCamera(38, width / height, 0.5, 68);
-    const initialZ = propsRef.current.orientation === 'w' ? 8.6 : -8.6;
-    camera.position.set(0, 7.6, initialZ);
+    const camera = new THREE.PerspectiveCamera(38, width / height, 0.5, 95);
+    const initialZ = propsRef.current.orientation === 'w' ? 8.8 : -8.8;
+    camera.position.set(0, 7.8, initialZ);
     camera.lookAt(0, 0, 0);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = !isSoftwareGl;
-    controls.dampingFactor = 0.07;
-    controls.maxPolarAngle = Math.PI / 2 - 0.06;
+    controls.dampingFactor = 0.1;
+    controls.maxPolarAngle = Math.PI / 2 - 0.05;
     controls.minPolarAngle = 0.08;
-    controls.minDistance = 4.5;
-    controls.maxDistance = 19.5;
+    controls.minDistance = 4.2;
+    controls.maxDistance = 24.0;
     controls.enablePan = false;
-    controls.target.set(0, 0, 0);
+    controls.target.set(0, 0.25, 0);
 
-    // 4. Grand Chess Chamber Lighting Rig
-    const hemiLight = new THREE.HemisphereLight('#FFF3E0', '#261810', 0.78);
-    hemiLight.position.set(0, 15, 0);
+    // 4. Adaptive Lighting Rig (Scales from lightweight LOW to cinematic dual-shadow ULTRA)
+    const hemiLight = new THREE.HemisphereLight('#D9C3A3', '#140F0C', 0.36);
+    hemiLight.position.set(0, 18, 0);
+    hemiLight.matrixAutoUpdate = false;
+    hemiLight.updateMatrix();
     scene.add(hemiLight);
 
-    // Overhead Chandelier Warm Key Light
-    const keyLight = new THREE.DirectionalLight('#FFE4B8', 1.9);
-    keyLight.position.set(5.2, 11.8, 6.2);
-    if (!isSoftwareGl && shadowsEnabled) {
-      keyLight.castShadow = true;
-      const mapDim = visualSettings.graphicsQuality === 'ultra' ? 2048 : 1024;
-      keyLight.shadow.mapSize.width = mapDim;
-      keyLight.shadow.mapSize.height = mapDim;
-      const d = 5.8;
-      keyLight.shadow.camera.left = -d;
-      keyLight.shadow.camera.right = d;
-      keyLight.shadow.camera.top = d;
-      keyLight.shadow.camera.bottom = -d;
-      keyLight.shadow.camera.near = 2;
-      keyLight.shadow.camera.far = 26;
-      keyLight.shadow.bias = -0.0005;
-      keyLight.shadow.normalBias = 0.02;
-    }
+    // Sanctuary Key Light
+    const keyLight = new THREE.DirectionalLight('#F2CE99', 1.05);
+    keyLight.position.set(5.2, 12.2, 6.2);
+    keyLight.matrixAutoUpdate = false;
+    keyLight.updateMatrix();
+    const d = 5.2;
+    keyLight.shadow.camera.left = -d;
+    keyLight.shadow.camera.right = d;
+    keyLight.shadow.camera.top = d;
+    keyLight.shadow.camera.bottom = -d;
+    keyLight.shadow.camera.near = 2;
+    keyLight.shadow.camera.far = 26;
+    keyLight.shadow.radius = 3.5;
+    keyLight.shadow.bias = -0.0003;
+    keyLight.shadow.normalBias = 0.015;
     scene.add(keyLight);
 
-    // Cathedral Window Side Sunlight Beam
-    const windowLight = new THREE.DirectionalLight('#FFD99B', 0.85);
-    windowLight.position.set(-12.5, 8.5, 2.0);
+    // Focused Overhead Altar Pool SpotLight (casts realistic radial contact shadows on ULTRA)
+    const altarSpotLight = new THREE.SpotLight('#F5D7A1', 1.3, 22, Math.PI / 3.8, 0.82, 1.5);
+    altarSpotLight.position.set(0, 9.6, 0);
+    altarSpotLight.target.position.set(0, 0, 0);
+    altarSpotLight.matrixAutoUpdate = false;
+    altarSpotLight.updateMatrix();
+    altarSpotLight.shadow.mapSize.width = 1024;
+    altarSpotLight.shadow.mapSize.height = 1024;
+    altarSpotLight.shadow.camera.near = 3;
+    altarSpotLight.shadow.camera.far = 16;
+    altarSpotLight.shadow.bias = -0.0002;
+    altarSpotLight.shadow.radius = 4;
+    scene.add(altarSpotLight);
+    scene.add(altarSpotLight.target);
+
+    // Rose Window Stained-Glass Grazing SpotLight (Active on HIGH / ULTRA for realistic cathedral chiaroscuro)
+    const roseWindowSpotLight = new THREE.SpotLight('#E8964A', 1.25, 28, Math.PI / 4, 0.9, 1.4);
+    roseWindowSpotLight.position.set(-10.5, 8.4, -7.2);
+    roseWindowSpotLight.target.position.set(0, 0.3, 0);
+    roseWindowSpotLight.matrixAutoUpdate = false;
+    roseWindowSpotLight.updateMatrix();
+    scene.add(roseWindowSpotLight);
+    scene.add(roseWindowSpotLight.target);
+
+    // Subtle Rose Window Directional Fill (Used on LOW / MEDIUM)
+    const windowLight = new THREE.DirectionalLight('#D49B54', 0.36);
+    windowLight.position.set(-11.5, 9.0, -8.0);
+    windowLight.matrixAutoUpdate = false;
+    windowLight.updateMatrix();
     scene.add(windowLight);
 
-    // Cool Rim Light for Obsidian Black Armor separation
-    const rimLight = new THREE.DirectionalLight('#9AC2E8', 0.65);
-    rimLight.position.set(4.0, 6.5, -9.5);
+    // Soft Cool Rim Light for Obsidian piece silhouette separation
+    const rimLight = new THREE.DirectionalLight('#6B96C2', 0.42);
+    rimLight.position.set(4.5, 7.2, -9.8);
+    rimLight.matrixAutoUpdate = false;
+    rimLight.updateMatrix();
     scene.add(rimLight);
 
-    // 5. Materials, Grand Chess Chamber, & Character Caches
+    // 5. Materials, Environment Container, & Fallback Caches
     const materials = createChessMaterialSet(renderer, isSoftwareGl);
     const stauntonCache = createStauntonGeometryCache();
     const livingCache = createLivingCharacterGeometryCache();
-    const grandChamber = createGrandChessChamber(materials);
-    grandChamber.setQualityVisibility(
-      visualSettings.graphicsQuality,
-      visualSettings.showChamberRoom
-    );
-    scene.add(grandChamber.group);
+
+    const fallbackChamber = createGrandChessChamber(materials);
+    scene.add(fallbackChamber.group);
+
+    let cathedralInstance: CathedralSceneInstance | null = null;
 
     const boardGroup = new THREE.Group();
+    boardGroup.matrixAutoUpdate = false;
     scene.add(boardGroup);
 
-    // Outer Walnut Frame (9.2 x 0.36 x 9.2)
-    const outerFrameGeo = new THREE.BoxGeometry(9.2, 0.36, 9.2);
-    outerFrameGeo.translate(0, -0.18, 0);
+    // Sleek Obsidian-Brass Frame (8.62 x 0.08 x 8.62) sized to fit inside Opt8_Altar_Golden_Runes (±4.32)
+    const outerFrameGeo = new THREE.BoxGeometry(8.62, 0.08, 8.62);
+    outerFrameGeo.translate(0, -0.02, 0);
     const outerFrameMesh = new THREE.Mesh(outerFrameGeo, materials.walnutFrame);
     outerFrameMesh.receiveShadow = true;
+    outerFrameMesh.matrixAutoUpdate = false;
     boardGroup.add(outerFrameMesh);
 
-    // Lower Stepped Mahogany/Wood Plinth (9.6 x 0.16 x 9.6)
-    const plinthGeo = new THREE.BoxGeometry(9.6, 0.16, 9.6);
-    plinthGeo.translate(0, -0.44, 0);
-    const plinthMesh = new THREE.Mesh(plinthGeo, materials.mediumWoodPlinth);
-    plinthMesh.receiveShadow = true;
-    boardGroup.add(plinthMesh);
-
     // Coordinate & Brass Frame Overlay Plane
-    const coordTex = createCoordinateFrameTexture(renderer.capabilities.getMaxAnisotropy());
-    const coordPlaneGeo = new THREE.PlaneGeometry(9.12, 9.12);
+    const coordTex = createCoordinateFrameTexture(
+      Math.min(renderer.capabilities.getMaxAnisotropy(), 4)
+    );
+    const coordPlaneGeo = new THREE.PlaneGeometry(8.58, 8.58);
     coordPlaneGeo.rotateX(-Math.PI / 2);
     const coordPlaneMat = new THREE.MeshBasicMaterial({
       map: coordTex,
@@ -427,55 +600,165 @@ export default function ChessBoard3D({
       polygonOffsetUnits: -1,
     });
     const coordPlaneMesh = new THREE.Mesh(coordPlaneGeo, coordPlaneMat);
-    coordPlaneMesh.position.y = 0.004;
+    coordPlaneMesh.position.y = 0.022;
+    coordPlaneMesh.matrixAutoUpdate = false;
+    coordPlaneMesh.updateMatrix();
     boardGroup.add(coordPlaneMesh);
 
-    // 64 Board Squares
-    const squareGeo = new THREE.BoxGeometry(1.0, 0.06, 1.0);
+    // 64 Board Squares batched into just 2 InstancedMesh draw calls (32 light + 32 dark)
+    const squareGeo = new THREE.BoxGeometry(1.0, 0.05, 1.0);
+    const lightSquaresInstanced = new THREE.InstancedMesh(squareGeo, materials.mapleSquare, 32);
+    const darkSquaresInstanced = new THREE.InstancedMesh(squareGeo, materials.walnutSquare, 32);
+    lightSquaresInstanced.receiveShadow = true;
+    darkSquaresInstanced.receiveShadow = true;
+    lightSquaresInstanced.matrixAutoUpdate = false;
+    darkSquaresInstanced.matrixAutoUpdate = false;
+
+    let lightIdx = 0;
+    let darkIdx = 0;
     for (let rankIdx = 0; rankIdx < 8; rankIdx++) {
       for (let fileIdx = 0; fileIdx < 8; fileIdx++) {
         const isLight = (rankIdx + fileIdx) % 2 !== 0;
-        const sqName = indicesToSquare(fileIdx, rankIdx);
-        const mesh = new THREE.Mesh(
-          squareGeo,
-          isLight ? materials.mapleSquare : materials.walnutSquare
-        );
-        mesh.position.set(fileIdx - 3.5, 0.0, 3.5 - rankIdx);
-        mesh.receiveShadow = true;
-        mesh.userData = { square: sqName, isSquare: true };
-        mesh.layers.enable(1);
-        boardGroup.add(mesh);
+        _instanceMatrix.makeTranslation(fileIdx - 3.5, 0.01, 3.5 - rankIdx);
+        if (isLight) {
+          lightSquaresInstanced.setMatrixAt(lightIdx++, _instanceMatrix);
+        } else {
+          darkSquaresInstanced.setMatrixAt(darkIdx++, _instanceMatrix);
+        }
       }
     }
+    lightSquaresInstanced.instanceMatrix.needsUpdate = true;
+    darkSquaresInstanced.instanceMatrix.needsUpdate = true;
+    lightSquaresInstanced.computeBoundingSphere();
+    darkSquaresInstanced.computeBoundingSphere();
+    boardGroup.add(lightSquaresInstanced);
+    boardGroup.add(darkSquaresInstanced);
+    boardGroup.updateMatrixWorld(true);
 
-    // Highlight Overlays Group
+    // Dynamic Quality Configurator (switches LOW potato mode <-> ULTRA realistic mode on the fly)
+    function applyQualityToScene() {
+      const { graphicsQuality: q, shadows: shMode, showChamberRoom } = propsRef.current.visualSettings;
+      const isLow = q === 'low';
+      const isUltra = q === 'ultra';
+      const isHighOrUltra = q === 'high' || q === 'ultra';
+      const enableShadows = !isSoftwareGl && !isLow && shMode !== 'off';
+
+      // Cap pixel ratio aggressively on LOW (0.85) so integrated laptop GPUs never bottleneck on fill-rate
+      const targetDpr = isLow ? 0.85 : q === 'medium' ? 1.15 : q === 'high' ? 1.5 : 2.0;
+      renderer.setPixelRatio(
+        isSoftwareGl ? 1 : Math.min(window.devicePixelRatio || 1, targetDpr)
+      );
+      renderer.shadowMap.enabled = enableShadows;
+
+      // Calibrate exposure & environment reflection for ULTRA realism vs LOW clarity
+      renderer.toneMappingExposure = isUltra ? 0.88 : isLow ? 0.85 : 0.82;
+      if ('environmentIntensity' in scene) {
+        (scene as THREE.Scene & { environmentIntensity: number }).environmentIntensity = isUltra
+          ? 0.34
+          : isLow
+          ? 0.22
+          : 0.26;
+      }
+
+      hemiLight.intensity = isUltra ? 0.28 : isLow ? 0.48 : 0.35;
+      keyLight.intensity = isUltra ? 1.32 : isLow ? 1.1 : 1.15;
+      keyLight.castShadow = enableShadows;
+
+      if (enableShadows) {
+        const targetMapDim = isUltra ? 2048 : q === 'high' ? 1536 : 1024;
+        if (keyLight.shadow.mapSize.width !== targetMapDim) {
+          keyLight.shadow.mapSize.width = targetMapDim;
+          keyLight.shadow.mapSize.height = targetMapDim;
+          keyLight.shadow.map?.dispose();
+          keyLight.shadow.map = null;
+        }
+      }
+
+      // Overhead Altar SpotLight & Rose Window Grazing Light
+      altarSpotLight.visible = !isLow;
+      altarSpotLight.intensity = isUltra ? 1.95 : 1.25;
+      altarSpotLight.castShadow = !isSoftwareGl && isUltra && enableShadows;
+
+      roseWindowSpotLight.visible = !isSoftwareGl && isHighOrUltra;
+      roseWindowSpotLight.intensity = isUltra ? 1.35 : 0.85;
+
+      windowLight.visible = !isHighOrUltra;
+      rimLight.intensity = isUltra ? 0.58 : 0.36;
+
+      if (cathedralInstance) {
+        cathedralInstance.applyQuality(q, showChamberRoom, isSoftwareGl);
+      } else {
+        fallbackChamber.setQualityVisibility(q, showChamberRoom);
+      }
+
+      requestRender();
+    }
+    applyQualitySettingsRef.current = applyQualityToScene;
+
+    // Highlight Overlays & Trajectory Arrows Group
     const highlightsGroup = new THREE.Group();
     scene.add(highlightsGroup);
+
+    const hoverPreviewGroup = new THREE.Group();
+    scene.add(hoverPreviewGroup);
 
     const highlightPlaneGeo = new THREE.PlaneGeometry(0.94, 0.94);
     highlightPlaneGeo.rotateX(-Math.PI / 2);
 
-    const legalDotGeo = new THREE.CylinderGeometry(0.16, 0.16, 0.03, 24);
-    const legalRingGeo = new THREE.RingGeometry(0.34, 0.44, 32);
+    const squareBorderRingGeo = new THREE.RingGeometry(0.41, 0.48, 4);
+    squareBorderRingGeo.rotateX(-Math.PI / 2);
+    squareBorderRingGeo.rotateY(Math.PI / 4);
+
+    const destBorderMat = new THREE.MeshBasicMaterial({
+      color: '#FBBF24',
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false,
+    });
+
+    const legalDotGeo = new THREE.CylinderGeometry(0.17, 0.19, 0.045, 18);
+    const legalOuterRingGeo = new THREE.RingGeometry(0.24, 0.31, 20);
+    legalOuterRingGeo.rotateX(-Math.PI / 2);
+
+    const legalRingGeo = new THREE.RingGeometry(0.36, 0.46, 24);
     legalRingGeo.rotateX(-Math.PI / 2);
 
-    const checkRingGeo = new THREE.RingGeometry(0.36, 0.47, 32);
+    const checkRingGeo = new THREE.RingGeometry(0.36, 0.48, 24);
     checkRingGeo.rotateX(-Math.PI / 2);
 
-    const duelImpactRingGeo = new THREE.RingGeometry(0.18, 0.46, 28);
+    const duelImpactRingGeo = new THREE.RingGeometry(0.18, 0.48, 24);
     duelImpactRingGeo.rotateX(-Math.PI / 2);
+
+    const motionTrailRingGeo = new THREE.RingGeometry(0.22, 0.42, 20);
+    motionTrailRingGeo.rotateX(-Math.PI / 2);
+
+    const whiteTrailMat = new THREE.MeshBasicMaterial({
+      color: '#38BDF8',
+      transparent: true,
+      opacity: 0.72,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const blackTrailMat = new THREE.MeshBasicMaterial({
+      color: '#F59E0B',
+      transparent: true,
+      opacity: 0.72,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
 
     // Active 3D Pieces Group & Duel Ghosts Group
     const piecesRootGroup = new THREE.Group();
-    piecesRootGroup.position.y = 0.03;
+    piecesRootGroup.position.y = 0.036;
     scene.add(piecesRootGroup);
 
     const duelGhostsGroup = new THREE.Group();
-    duelGhostsGroup.position.y = 0.03;
+    duelGhostsGroup.position.y = 0.036;
     scene.add(duelGhostsGroup);
 
     const activePieces = new Map<string, AnimatedPieceEntry>();
     const defeatedGhosts: DefeatedDuelGhost[] = [];
+    const legalIndicatorMeshes: THREE.Object3D[] = [];
 
     // Camera Transition & Duel Cut-in State
     let activeCameraTransition = false;
@@ -486,22 +769,22 @@ export default function ChessBoard3D({
     function setCameraGoal(preset: CameraViewPreset) {
       savedPreDuelCamPos = null;
       savedPreDuelTarget = null;
-      _camLookAtPos.set(0, 0, 0);
+      _camLookAtPos.set(0, 0.25, 0);
 
       if (preset === 'white') {
-        _camTargetPos.set(0, 7.4, 8.5);
+        _camTargetPos.set(0, 7.6, 8.6);
       } else if (preset === 'black') {
-        _camTargetPos.set(0, 7.4, -8.5);
+        _camTargetPos.set(0, 7.6, -8.6);
       } else if (preset === 'top') {
         const zOffset = propsRef.current.orientation === 'w' ? 0.9 : -0.9;
-        _camTargetPos.set(0, 12.4, zOffset);
+        _camTargetPos.set(0, 12.6, zOffset);
       } else if (preset === 'cinema') {
-        const zSide = propsRef.current.orientation === 'w' ? 7.6 : -7.6;
-        _camTargetPos.set(5.8, 5.4, zSide);
+        const zSide = propsRef.current.orientation === 'w' ? 8.2 : -8.2;
+        _camTargetPos.set(6.4, 5.6, zSide);
       } else if (preset === 'inspection') {
         const zSide = propsRef.current.orientation === 'w' ? 5.6 : -5.6;
-        _camTargetPos.set(-3.4, 3.1, zSide);
-        _camLookAtPos.set(0, 0.45, 0);
+        _camTargetPos.set(-3.4, 3.2, zSide);
+        _camLookAtPos.set(0, 0.55, 0);
       }
       activeCameraTransition = true;
       requestRender();
@@ -519,23 +802,31 @@ export default function ChessBoard3D({
     function buildPieceVisual(type: PieceSymbol, color: PieceColor): {
       group: THREE.Group;
       rig: LivingCharacterRig | null;
+      glbPiece: GlbPieceInstance | null;
     } {
-      if (propsRef.current.visualSettings.pieceStyle === 'living') {
+      const { graphicsQuality: q, shadows: shMode, pieceStyle: pStyle } = propsRef.current.visualSettings;
+      const enableShadows = !isSoftwareGl && q !== 'low' && shMode !== 'off';
+
+      if (pStyle === 'living') {
+        const glbInst = buildGlbPieceInstance(type, color, enableShadows, isSoftwareGl, q);
+        if (glbInst) {
+          return { group: glbInst.rootGroup, rig: null, glbPiece: glbInst };
+        }
         const rig = buildLivingCharacterRig(
           type,
           color,
           materials,
           livingCache,
           Math.random() * Math.PI * 2,
-          !isSoftwareGl && shadowsEnabled
+          enableShadows
         );
-        return { group: rig.rootGroup, rig };
+        return { group: rig.rootGroup, rig, glbPiece: null };
       }
       const group = stauntonCache.createPieceGroup(type, color, materials);
-      return { group, rig: null };
+      return { group, rig: null, glbPiece: null };
     }
 
-    // Trigger a short (~1.2s) duel sequence when a piece captures an opponent
+    // Trigger a duel sequence when a piece captures an opponent (using GLB Attack + Shatter animations)
     function triggerDuelSequence(duel: CaptureDuelEvent) {
       const nowSec = performance.now() / 1000;
       const mode = propsRef.current.visualSettings.cinematicCaptures;
@@ -544,13 +835,14 @@ export default function ChessBoard3D({
       const { x: toX, z: toZ } = squareToWorldXZ(duel.to);
       const { x: fromX, z: fromZ } = squareToWorldXZ(duel.from);
 
-      // 1. Find the attacking piece that moved to `duel.to` and set its state to 'attack'
+      // 1. Find the attacking piece that moved to `duel.to` and play its Attack animation
       for (const entry of activePieces.values()) {
         if (entry.square === duel.to && entry.color === duel.attackerColor) {
-          // Face the direction of attack
           const angle = Math.atan2(toX - fromX, toZ - fromZ);
           entry.group.rotation.y = angle;
-          if (entry.rig) {
+          if (entry.glbPiece) {
+            entry.glbPiece.setAnimState('attack', 1.3);
+          } else if (entry.rig) {
             entry.rig.animState = 'attack';
             entry.rig.stateStartTime = nowSec;
           }
@@ -558,15 +850,16 @@ export default function ChessBoard3D({
         }
       }
 
-      // 2. Spawn a temporary defeated defender rig on the target square for 0.85s
-      const { group: defGroup, rig: defRig } = buildPieceVisual(
+      // 2. Spawn defeated defender piece on the target square playing its GLB 'Shatter' animation
+      const { group: defGroup, rig: defRig, glbPiece: defGlb } = buildPieceVisual(
         duel.defenderType,
         duel.defenderColor
       );
       defGroup.position.set(toX, 0, toZ);
-      // Face the attacker
       defGroup.rotation.y = Math.atan2(fromX - toX, fromZ - toZ);
-      if (defRig) {
+      if (defGlb) {
+        defGlb.setAnimState('shatter', 1.2);
+      } else if (defRig) {
         defRig.animState = 'defeat';
         defRig.stateStartTime = nowSec;
       }
@@ -574,9 +867,9 @@ export default function ChessBoard3D({
 
       // 3. Impact shockwave ring on the capture square
       const impactMat = new THREE.MeshBasicMaterial({
-        color: duel.attackerColor === 'w' ? '#38BDF8' : '#F43F5E',
+        color: duel.attackerColor === 'w' ? '#38BDF8' : '#E11D48',
         transparent: true,
-        opacity: 0.85,
+        opacity: 0.9,
         side: THREE.DoubleSide,
         depthWrite: false,
       });
@@ -587,31 +880,32 @@ export default function ChessBoard3D({
       defeatedGhosts.push({
         group: defGroup,
         rig: defRig,
+        glbPiece: defGlb,
         impactRing,
         startTimeSec: nowSec,
-        durationSec: 0.9,
+        durationSec: 1.2,
       });
 
-      // 4. Optional brief Cinematic Camera focus (~1.15s) if mode === 'on'
+      // 4. Optional brief Cinematic Camera focus (~1.35s) if mode === 'on'
       if (mode === 'on') {
         if (!savedPreDuelCamPos) {
           savedPreDuelCamPos = camera.position.clone();
           savedPreDuelTarget = controls.target.clone();
         }
-        const zDir = propsRef.current.orientation === 'w' ? 4.2 : -4.2;
-        const sideOffset = toX >= 0 ? -2.6 : 2.6;
-        _camTargetPos.set(toX + sideOffset, 3.8, toZ + zDir);
-        _camLookAtPos.set(toX, 0.45, toZ);
+        const zDir = propsRef.current.orientation === 'w' ? 4.4 : -4.4;
+        const sideOffset = toX >= 0 ? -2.8 : 2.8;
+        _camTargetPos.set(toX + sideOffset, 3.9, toZ + zDir);
+        _camLookAtPos.set(toX, 0.55, toZ);
         activeCameraTransition = true;
-        duelCameraReturnDeadlineSec = nowSec + 1.15;
+        duelCameraReturnDeadlineSec = nowSec + 1.35;
       }
 
       requestRender();
     }
     triggerDuelSequenceRef.current = triggerDuelSequence;
 
-    // Synchronize 3D pieces and square highlights with current FEN & selection
-    function syncSceneWithProps() {
+    // Synchronize 3D pieces, trajectory arrows, and square highlights with current FEN & selection
+    function syncSceneWithProps(forceRebuildPieces = false) {
       const {
         fen: currentFen,
         selectedSquare: selSq,
@@ -619,65 +913,143 @@ export default function ChessBoard3D({
         lastMove: lstMove,
         hintMove: hntMove,
         kingSquareInCheck: checkSq,
+        showMoveArrow: showArrow,
       } = propsRef.current;
 
-      // 1. Rebuild highlights
-      while (highlightsGroup.children.length > 0) {
-        highlightsGroup.remove(highlightsGroup.children[0]);
+      if (forceRebuildPieces) {
+        for (const oldEntry of activePieces.values()) {
+          piecesRootGroup.remove(oldEntry.group);
+          piecesRootGroup.remove(oldEntry.motionTrailRing);
+        }
+        activePieces.clear();
       }
+
+      // 1. Rebuild highlights & 3D Trajectory Arrows cleanly
+      while (highlightsGroup.children.length > 0) {
+        const child = highlightsGroup.children[0];
+        if (child.userData?.disposableArrow) {
+          disposeArrowGroup(child as THREE.Group);
+        }
+        highlightsGroup.remove(child);
+      }
+      legalIndicatorMeshes.length = 0;
 
       if (selSq) {
         const { x, z } = squareToWorldXZ(selSq);
         const m = new THREE.Mesh(highlightPlaneGeo, materials.selectedHighlight);
-        m.position.set(x, 0.036, z);
+        m.position.set(x, 0.042, z);
+        m.matrixAutoUpdate = false;
+        m.updateMatrix();
         highlightsGroup.add(m);
       }
 
       if (lstMove) {
-        [lstMove.from, lstMove.to].forEach((sq) => {
+        [lstMove.from, lstMove.to].forEach((sq, idx) => {
           const { x, z } = squareToWorldXZ(sq);
           const m = new THREE.Mesh(highlightPlaneGeo, materials.lastMoveHighlight);
-          m.position.set(x, 0.035, z);
+          m.position.set(x, 0.039, z);
+          m.matrixAutoUpdate = false;
+          m.updateMatrix();
           highlightsGroup.add(m);
+
+          if (idx === 1) {
+            const destBorder = new THREE.Mesh(squareBorderRingGeo, destBorderMat);
+            destBorder.position.set(x, 0.046, z);
+            destBorder.matrixAutoUpdate = false;
+            destBorder.updateMatrix();
+            highlightsGroup.add(destBorder);
+          }
         });
+
+        if (showArrow) {
+          const arrowGroup = create3DTrajectoryArrow(
+            lstMove.from,
+            lstMove.to,
+            '#FBBF24',
+            0.84,
+            0.36
+          );
+          highlightsGroup.add(arrowGroup);
+        }
       }
 
       if (hntMove) {
         [hntMove.from, hntMove.to].forEach((sq) => {
           const { x, z } = squareToWorldXZ(sq);
           const m = new THREE.Mesh(highlightPlaneGeo, materials.hintHighlight);
-          m.position.set(x, 0.038, z);
+          m.position.set(x, 0.044, z);
+          m.matrixAutoUpdate = false;
+          m.updateMatrix();
           highlightsGroup.add(m);
         });
+        const hintArrow = create3DTrajectoryArrow(
+          hntMove.from,
+          hntMove.to,
+          '#10B981',
+          0.9,
+          0.44
+        );
+        highlightsGroup.add(hintArrow);
       }
 
       if (checkSq) {
         const { x, z } = squareToWorldXZ(checkSq);
         const m = new THREE.Mesh(checkRingGeo, materials.checkAlertRing);
-        m.position.set(x, 0.04, z);
+        m.position.set(x, 0.048, z);
+        m.matrixAutoUpdate = false;
+        m.updateMatrix();
         highlightsGroup.add(m);
       }
 
+      // Legal Move & Capture Target Beacons
       for (const mv of legMoves) {
         const { x, z } = squareToWorldXZ(mv.to);
         const isCap = Boolean(mv.captured) || mv.isEnPassant;
-        const indicator = new THREE.Mesh(
-          isCap ? legalRingGeo : legalDotGeo,
-          isCap ? materials.legalCaptureRing : materials.legalMoveDot
-        );
-        indicator.position.set(x, isCap ? 0.042 : 0.045, z);
-        indicator.userData = { square: mv.to, isSquare: true };
-        indicator.layers.enable(1);
-        highlightsGroup.add(indicator);
+
+        if (isCap) {
+          const capGroup = new THREE.Group();
+          capGroup.position.set(x, 0.048, z);
+
+          const baseRing = new THREE.Mesh(legalRingGeo, materials.legalCaptureRing);
+          baseRing.matrixAutoUpdate = false;
+          capGroup.add(baseRing);
+
+          const upperRing = new THREE.Mesh(legalRingGeo, materials.legalCaptureRing);
+          upperRing.position.y = 0.26;
+          upperRing.scale.setScalar(1.08);
+          upperRing.matrixAutoUpdate = false;
+          upperRing.updateMatrix();
+          capGroup.add(upperRing);
+
+          capGroup.userData = { square: mv.to };
+          highlightsGroup.add(capGroup);
+          legalIndicatorMeshes.push(capGroup);
+        } else {
+          const moveBeaconGroup = new THREE.Group();
+          moveBeaconGroup.position.set(x, 0.052, z);
+
+          const dot = new THREE.Mesh(legalDotGeo, materials.legalMoveDot);
+          dot.matrixAutoUpdate = false;
+          moveBeaconGroup.add(dot);
+
+          const outerRing = new THREE.Mesh(legalOuterRingGeo, materials.selectedHighlight);
+          outerRing.position.y = -0.008;
+          outerRing.matrixAutoUpdate = false;
+          outerRing.updateMatrix();
+          moveBeaconGroup.add(outerRing);
+
+          moveBeaconGroup.userData = { square: mv.to };
+          highlightsGroup.add(moveBeaconGroup);
+          legalIndicatorMeshes.push(moveBeaconGroup);
+        }
       }
 
-      // 2. Reconcile Pieces for smooth movement & articulated animations
+      // 2. Reconcile Pieces (Zero scene-graph traversal on existing pieces!)
       const nextPieces: BoardPiece[] = parseBoardFromFen(currentFen);
       const matchedOldKeys = new Set<string>();
       const nextMap = new Map<string, AnimatedPieceEntry>();
       const nowSec = performance.now() / 1000;
 
-      // First pass: pieces that stayed on the exact same square with same type & color
       const unmatchedNext: BoardPiece[] = [];
       for (const np of nextPieces) {
         let foundKey: string | null = null;
@@ -698,11 +1070,9 @@ export default function ChessBoard3D({
           const { x, z } = squareToWorldXZ(np.square);
           entry.targetX = x;
           entry.targetZ = z;
-          entry.group.userData = { square: np.square, isPiece: true };
-          entry.group.traverse((child) => {
-            child.userData = { square: np.square, isPiece: true };
-            child.layers.enable(1);
-          });
+          if (entry.glbPiece) {
+            entry.glbPiece.setSelected(selSq === np.square);
+          }
           nextMap.set(foundKey, entry);
         } else {
           unmatchedNext.push(np);
@@ -716,11 +1086,24 @@ export default function ChessBoard3D({
           if (
             !matchedOldKeys.has(k) &&
             oldEntry.color === np.color &&
-            (oldEntry.type === np.type ||
-              (lstMove && oldEntry.square === lstMove.from && np.square === lstMove.to))
+            lstMove &&
+            oldEntry.square === lstMove.from &&
+            np.square === lstMove.to
           ) {
             foundKey = k;
             break;
+          }
+        }
+        if (!foundKey) {
+          for (const [k, oldEntry] of activePieces.entries()) {
+            if (
+              !matchedOldKeys.has(k) &&
+              oldEntry.color === np.color &&
+              oldEntry.type === np.type
+            ) {
+              foundKey = k;
+              break;
+            }
           }
         }
 
@@ -729,7 +1112,6 @@ export default function ChessBoard3D({
         if (foundKey) {
           matchedOldKeys.add(foundKey);
           const entry = activePieces.get(foundKey)!;
-          // Handle pawn promotion changing piece type
           if (entry.type !== np.type) {
             piecesRootGroup.remove(entry.group);
             const built = buildPieceVisual(np.type, np.color);
@@ -737,38 +1119,56 @@ export default function ChessBoard3D({
             piecesRootGroup.add(built.group);
             entry.group = built.group;
             entry.rig = built.rig;
+            entry.glbPiece = built.glbPiece;
             entry.type = np.type;
           }
-          // Rotate piece toward movement direction
+
           const moveDx = x - entry.currentX;
           const moveDz = z - entry.currentZ;
           if (Math.hypot(moveDx, moveDz) > 0.05) {
             entry.group.rotation.y = Math.atan2(moveDx, moveDz);
+            entry.moveStartX = entry.currentX;
+            entry.moveStartZ = entry.currentZ;
+            entry.moveStartTimeSec = nowSec;
+            entry.isKnightJump = np.type === 'n';
+            entry.moveDurationSec = entry.isKnightJump ? 0.56 : 0.46;
+            entry.isMoving = true;
+            entry.motionTrailRing.visible = true;
+
+            if (entry.glbPiece && entry.glbPiece.currentState !== 'attack') {
+              entry.glbPiece.setAnimState('move', 1.45);
+            } else if (entry.rig && entry.rig.animState !== 'attack') {
+              entry.rig.animState = np.type === 'n' ? 'leap' : 'walk';
+              entry.rig.stateStartTime = nowSec;
+            }
           }
-          if (entry.rig && entry.rig.animState !== 'attack') {
-            entry.rig.animState = np.type === 'n' ? 'leap' : 'walk';
-            entry.rig.stateStartTime = nowSec;
-          }
+
           entry.square = np.square;
           entry.targetX = x;
           entry.targetZ = z;
-          entry.isKnightJump = np.type === 'n';
-          entry.group.userData = { square: np.square, isPiece: true };
-          entry.group.traverse((child) => {
-            child.userData = { square: np.square, isPiece: true };
-            child.layers.enable(1);
-          });
+          if (entry.glbPiece) {
+            entry.glbPiece.setSelected(selSq === np.square);
+          }
           nextMap.set(foundKey, entry);
         } else {
           const newKey = `${np.color}-${np.type}-${np.square}-${Math.random().toString(36).slice(2, 7)}`;
           const built = buildPieceVisual(np.type, np.color);
+          const defaultYaw = np.color === 'w' ? Math.PI : 0;
           built.group.position.set(x, 0, z);
-          built.group.userData = { square: np.square, isPiece: true };
-          built.group.traverse((child) => {
-            child.userData = { square: np.square, isPiece: true };
-            child.layers.enable(1);
-          });
+          built.group.rotation.y = defaultYaw;
+          if (built.glbPiece) {
+            built.glbPiece.setSelected(selSq === np.square);
+          }
           piecesRootGroup.add(built.group);
+
+          const motionTrailRing = new THREE.Mesh(
+            motionTrailRingGeo,
+            np.color === 'w' ? whiteTrailMat : blackTrailMat
+          );
+          motionTrailRing.position.set(x, 0.015, z);
+          motionTrailRing.visible = false;
+          piecesRootGroup.add(motionTrailRing);
+
           nextMap.set(newKey, {
             key: newKey,
             type: np.type,
@@ -776,20 +1176,27 @@ export default function ChessBoard3D({
             square: np.square,
             group: built.group,
             rig: built.rig,
+            glbPiece: built.glbPiece,
             currentX: x,
             currentZ: z,
             currentY: 0,
+            moveStartX: x,
+            moveStartZ: z,
             targetX: x,
             targetZ: z,
+            moveStartTimeSec: 0,
+            moveDurationSec: 0.46,
+            isMoving: false,
             isKnightJump: false,
+            motionTrailRing,
           });
         }
       }
 
-      // Remove captured or unused pieces
       for (const [k, oldEntry] of activePieces.entries()) {
         if (!matchedOldKeys.has(k)) {
           piecesRootGroup.remove(oldEntry.group);
+          piecesRootGroup.remove(oldEntry.motionTrailRing);
         }
       }
 
@@ -803,40 +1210,149 @@ export default function ChessBoard3D({
 
     triggerSceneSyncRef.current = syncSceneWithProps;
 
-    if (!isSoftwareGl) {
-      renderer.compile(scene, camera);
-    }
+    // Progressive 2-stage loading:
+    // Stage 1: Load 6 Piece GLBs first so the board is immediately playable with 3D GLB characters
+    // Stage 2: Stream in the Gothic Cathedral & Obsidian Altar GLB right after
+    preloadPieceGlbAssets((loaded, total, label) => {
+      if (disposed) return;
+      setLoadingProgress({ loaded, total, label });
+    })
+      .then(async () => {
+        if (disposed) return;
+        syncSceneWithProps(true);
 
-    // Raycasting & Dragging Logic
+        await preloadCathedralGlbAsset((loaded, total, label) => {
+          if (disposed) return;
+          setLoadingProgress(loaded >= total ? null : { loaded, total, label });
+        });
+        if (disposed) return;
+        setLoadingProgress(null);
+
+        const builtCathedral = buildCathedralEnvironmentInstance(
+          Math.min(renderer.capabilities.getMaxAnisotropy(), 4),
+          propsRef.current.visualSettings.graphicsQuality,
+          isSoftwareGl
+        );
+        if (builtCathedral) {
+          scene.remove(fallbackChamber.group);
+          cathedralInstance = builtCathedral;
+          cathedralInstance.applyQuality(
+            propsRef.current.visualSettings.graphicsQuality,
+            propsRef.current.visualSettings.showChamberRoom,
+            isSoftwareGl
+          );
+          scene.add(cathedralInstance.group);
+          requestRender();
+        }
+      })
+      .catch(() => {
+        if (!disposed) {
+          setLoadingProgress(null);
+        }
+      });
+
+    applyQualityToScene();
+
+    // =========================================================================
+    // ZERO-MESH O(1) MATHEMATICAL RAY PICKING (0.002ms vs 400ms SkinnedMesh Raycast!)
+    // =========================================================================
     const raycaster = new THREE.Raycaster();
-    raycaster.layers.set(1);
     const pointer = new THREE.Vector2();
 
     let pointerDownPos: { x: number; y: number } | null = null;
     let draggedPieceEntry: AnimatedPieceEntry | null = null;
     let isDraggingPiece = false;
     let lastHoverTime = 0;
+    let lastHoveredLegalSq: string | null = null;
 
     function getSquareFromEvent(e: PointerEvent): string | null {
       const rect = renderer.domElement.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return null;
+
       pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(pointer, camera);
 
-      const hits = raycaster.intersectObjects(
-        [...piecesRootGroup.children, ...boardGroup.children, ...highlightsGroup.children],
-        true
-      );
-      for (const hit of hits) {
-        let obj: THREE.Object3D | null = hit.object;
-        while (obj) {
-          if (obj.userData?.square) {
-            return obj.userData.square as string;
+      const ray = raycaster.ray;
+
+      // 1. Check board surface plane (y = 0.036)
+      let boardSquare: string | null = null;
+      let boardDistSq = Infinity;
+      if (ray.intersectPlane(_boardSurfacePlane, _boardHitVec)) {
+        if (
+          _boardHitVec.x >= -4.0 &&
+          _boardHitVec.x < 4.0 &&
+          _boardHitVec.z >= -4.0 &&
+          _boardHitVec.z < 4.0
+        ) {
+          const fIdx = Math.floor(_boardHitVec.x + 4.0);
+          const rIdx = Math.floor(4.0 - _boardHitVec.z);
+          if (fIdx >= 0 && fIdx < 8 && rIdx >= 0 && rIdx < 8) {
+            boardSquare = indicesToSquare(fIdx, rIdx);
+            boardDistSq = ray.origin.distanceToSquared(_boardHitVec);
           }
-          obj = obj.parent;
         }
       }
-      return null;
+
+      // 2. When dragging a piece, always snap directly to the board square under the cursor
+      if (isDraggingPiece) {
+        return boardSquare;
+      }
+
+      // 3. Check lightweight mathematical AABBs of the active pieces (at most 32 boxes, 0 mesh triangles!)
+      let closestPieceSquare: string | null = null;
+      let closestPieceDistSq = Infinity;
+      const halfW = 0.33;
+
+      for (const entry of activePieces.values()) {
+        const h = PIECE_HITBOX_HEIGHTS[entry.type] || 1.1;
+        _pieceHitBox.min.set(entry.currentX - halfW, 0.036, entry.currentZ - halfW);
+        _pieceHitBox.max.set(entry.currentX + halfW, 0.036 + h, entry.currentZ + halfW);
+
+        if (ray.intersectBox(_pieceHitBox, _boxHitVec)) {
+          const dSq = ray.origin.distanceToSquared(_boxHitVec);
+          if (dSq < closestPieceDistSq) {
+            closestPieceDistSq = dSq;
+            closestPieceSquare = entry.square;
+          }
+        }
+      }
+
+      if (closestPieceSquare && closestPieceDistSq <= boardDistSq) {
+        return closestPieceSquare;
+      }
+
+      return boardSquare || closestPieceSquare;
+    }
+
+    function updateHoverPreview(hoveredSq: string | null) {
+      if (hoveredSq === lastHoveredLegalSq) return;
+      lastHoveredLegalSq = hoveredSq;
+
+      while (hoverPreviewGroup.children.length > 0) {
+        const child = hoverPreviewGroup.children[0];
+        if (child.userData?.disposableArrow) {
+          disposeArrowGroup(child as THREE.Group);
+        }
+        hoverPreviewGroup.remove(child);
+      }
+
+      const { selectedSquare: selSq, legalMoves: legMoves } = propsRef.current;
+      if (selSq && hoveredSq && selSq !== hoveredSq) {
+        const matchingLegal = legMoves.find((m) => m.from === selSq && m.to === hoveredSq);
+        if (matchingLegal) {
+          const isCap = Boolean(matchingLegal.captured) || matchingLegal.isEnPassant;
+          const previewArrow = create3DTrajectoryArrow(
+            selSq,
+            hoveredSq,
+            isCap ? '#E11D48' : '#38BDF8',
+            0.9,
+            0.42
+          );
+          hoverPreviewGroup.add(previewArrow);
+        }
+      }
+      requestRender();
     }
 
     function onPointerDown(e: PointerEvent) {
@@ -875,9 +1391,11 @@ export default function ChessBoard3D({
           if (raycaster.ray.intersectPlane(_dragBoardPlane, _planeIntersect)) {
             draggedPieceEntry.group.position.set(
               THREE.MathUtils.clamp(_planeIntersect.x, -3.8, 3.8),
-              0.28,
+              0.34,
               THREE.MathUtils.clamp(_planeIntersect.z, -3.8, 3.8)
             );
+            const hoverSq = getSquareFromEvent(e);
+            updateHoverPreview(hoverSq);
             requestRender();
           }
           return;
@@ -885,16 +1403,18 @@ export default function ChessBoard3D({
       }
 
       const now = performance.now();
-      if (now - lastHoverTime < 45) return;
+      if (now - lastHoverTime < 65) return;
       lastHoverTime = now;
       const hoveredSq = getSquareFromEvent(e);
       renderer.domElement.style.cursor = hoveredSq ? 'pointer' : 'grab';
+      updateHoverPreview(hoveredSq);
     }
 
     function onPointerUp(e: PointerEvent) {
       if (e.button !== 0 || !propsRef.current.interactive) return;
 
       const targetSq = getSquareFromEvent(e);
+      updateHoverPreview(null);
 
       if (isDraggingPiece && draggedPieceEntry) {
         const fromSq = draggedPieceEntry.square;
@@ -954,12 +1474,7 @@ export default function ChessBoard3D({
     }
     domEl.addEventListener('webglcontextlost', handleContextLost);
 
-    // 6. Render Loop & Software WebGL Frame Pacing
-    let frameId = 0;
-    let renderBusy = false;
-    let renderDirty = false;
-    let lastFrameTime = performance.now();
-
+    // 6. On-Demand + Adaptive Render Loop (0% Idle CPU/GPU on LOW, MEDIUM, & HIGH)
     function afterDraw(cb: () => void) {
       const gl = renderer.getContext() as WebGL2RenderingContext;
       if (gl && typeof gl.fenceSync === 'function') {
@@ -992,9 +1507,14 @@ export default function ChessBoard3D({
         lastFrameTime = now;
         const nowSec = now / 1000;
 
-        // Keep continuous animation running when Living Characters are active on hardware WebGL
-        let needsMoreFrames =
-          !isSoftwareGl && propsRef.current.visualSettings.pieceStyle === 'living';
+        const currentQuality = propsRef.current.visualSettings.graphicsQuality;
+        const isUltra = !isSoftwareGl && currentQuality === 'ultra';
+        const isHighOrUltra =
+          !isSoftwareGl && (currentQuality === 'high' || currentQuality === 'ultra');
+
+        // Only loop continuously in ULTRA mode; in LOW, MEDIUM, and HIGH modes,
+        // render strictly on-demand when an animation, duel, or camera movement is active!
+        let needsMoreFrames = isUltra;
 
         // Return camera to player view after duel focus completes
         if (savedPreDuelCamPos && savedPreDuelTarget && nowSec >= duelCameraReturnDeadlineSec) {
@@ -1041,12 +1561,28 @@ export default function ChessBoard3D({
           camera.lookAt(controls.target);
         }
 
-        // Update floating chamber dust motes on High/Ultra
-        if (!isSoftwareGl) {
-          grandChamber.update(nowSec, propsRef.current.visualSettings.graphicsQuality);
+        // Update Cathedral Brazier Flames & Dust Motes only on High / Ultra
+        if (isHighOrUltra) {
+          if (cathedralInstance) {
+            cathedralInstance.update(nowSec, currentQuality);
+          } else {
+            fallbackChamber.update(nowSec, currentQuality);
+          }
         }
 
-        // Update defeated duel ghosts & shockwave rings
+        // Scale legal move indicators on hover (and pulse on Ultra)
+        for (let i = 0; i < legalIndicatorMeshes.length; i++) {
+          const ind = legalIndicatorMeshes[i];
+          const isHovered = ind.userData?.square === lastHoveredLegalSq;
+          const baseScale = isHovered
+            ? 1.24
+            : isUltra
+            ? 1.0 + Math.sin(nowSec * 5.2 + i * 0.5) * 0.07
+            : 1.0;
+          ind.scale.setScalar(baseScale);
+        }
+
+        // Update defeated duel ghosts & Shatter animation
         for (let i = defeatedGhosts.length - 1; i >= 0; i--) {
           const g = defeatedGhosts[i];
           const elapsed = nowSec - g.startTimeSec;
@@ -1058,75 +1594,85 @@ export default function ChessBoard3D({
           } else {
             needsMoreFrames = true;
             const p = elapsed / g.durationSec;
-            if (g.rig) {
+            if (g.glbPiece) {
+              g.glbPiece.update(dt, nowSec, false, true);
+            } else if (g.rig) {
               updateLivingCharacterRigAnimation(g.rig, nowSec, false);
             }
-            const scale = Math.max(0.01, 1 - Math.pow(p, 2) * 0.85);
-            g.group.scale.setScalar(scale);
-            g.group.position.y = -p * 0.22;
-
-            const ringScale = 1 + p * 2.4;
+            if (p > 0.55) {
+              const fade = 1 - (p - 0.55) / 0.45;
+              g.group.scale.setScalar(Math.max(0.01, fade));
+            }
+            const ringScale = 1 + p * 2.6;
             g.impactRing.scale.setScalar(ringScale);
             (g.impactRing.material as THREE.MeshBasicMaterial).opacity = Math.max(
               0,
-              0.85 * (1 - p)
+              0.9 * (1 - p)
             );
           }
         }
 
-        // Smooth piece movement interpolation & Living Character joint animation
+        // Update piece movement trajectories & Hybrid Static/Skinned GLB animations
         const checkSq = propsRef.current.kingSquareInCheck;
+        const selSq = propsRef.current.selectedSquare;
+
         for (const entry of activePieces.values()) {
           if (isDraggingPiece && draggedPieceEntry === entry) continue;
-          const dx = entry.targetX - entry.currentX;
-          const dz = entry.targetZ - entry.currentZ;
-          const distSq = dx * dx + dz * dz;
 
-          if (distSq > 0.0002) {
+          if (entry.isMoving) {
             needsMoreFrames = true;
-            entry.currentX = THREE.MathUtils.damp(
-              entry.currentX,
-              entry.targetX,
-              13.5,
-              dt
-            );
-            entry.currentZ = THREE.MathUtils.damp(
-              entry.currentZ,
-              entry.targetZ,
-              13.5,
-              dt
-            );
-            const distRem = Math.sqrt(distSq);
-            const maxLift = entry.isKnightJump ? 0.68 : 0.16;
-            entry.currentY = Math.sin(Math.min(1, distRem / 2.2) * Math.PI) * maxLift;
+            const elapsedMove = nowSec - entry.moveStartTimeSec;
+            const rawT = Math.min(1, elapsedMove / entry.moveDurationSec);
+            const easedT = easeInOutCubic(rawT);
+
+            entry.currentX = THREE.MathUtils.lerp(entry.moveStartX, entry.targetX, easedT);
+            entry.currentZ = THREE.MathUtils.lerp(entry.moveStartZ, entry.targetZ, easedT);
+
+            const maxLift = entry.isKnightJump ? 0.88 : 0.32;
+            entry.currentY = Math.sin(rawT * Math.PI) * maxLift;
             entry.group.position.set(entry.currentX, entry.currentY, entry.currentZ);
-          } else {
-            if (entry.currentY !== 0) {
+
+            entry.motionTrailRing.position.set(entry.currentX, 0.016, entry.currentZ);
+            entry.motionTrailRing.scale.setScalar(1 + Math.sin(rawT * Math.PI) * 0.35);
+
+            if (rawT >= 1) {
+              entry.isMoving = false;
               entry.currentX = entry.targetX;
               entry.currentZ = entry.targetZ;
               entry.currentY = 0;
               entry.group.position.set(entry.targetX, 0, entry.targetZ);
+              entry.motionTrailRing.visible = false;
+              const defaultYaw = entry.color === 'w' ? Math.PI : 0;
+              entry.group.rotation.y = defaultYaw;
+              if (entry.glbPiece && entry.glbPiece.currentState === 'move') {
+                entry.glbPiece.setAnimState('idle', 1);
+              }
             }
-            if (entry.rig) {
-              if (
-                entry.rig.animState === 'walk' ||
-                entry.rig.animState === 'leap' ||
-                (entry.rig.animState === 'attack' && nowSec - entry.rig.stateStartTime > 0.95)
-              ) {
-                entry.rig.animState = 'idle';
-                const defaultYaw = entry.color === 'w' ? Math.PI : 0;
-                entry.group.rotation.y = THREE.MathUtils.damp(
-                  entry.group.rotation.y,
-                  defaultYaw,
-                  8,
-                  dt
-                );
+          } else {
+            const targetHoverY = selSq === entry.square ? 0.08 : 0;
+            if (Math.abs(entry.currentY - targetHoverY) > 0.002) {
+              needsMoreFrames = true;
+              entry.currentY = THREE.MathUtils.damp(entry.currentY, targetHoverY, 14, dt);
+              entry.group.position.set(entry.targetX, entry.currentY, entry.targetZ);
+            } else if (entry.currentY !== targetHoverY) {
+              entry.currentY = targetHoverY;
+              entry.group.position.set(entry.targetX, targetHoverY, entry.targetZ);
+            }
+
+            if (entry.glbPiece && entry.glbPiece.currentState === 'attack') {
+              if (entry.glbPiece.actions.attack?.isRunning()) {
+                needsMoreFrames = true;
+              } else {
+                entry.glbPiece.setAnimState('idle', 1);
+                entry.group.rotation.y = entry.color === 'w' ? Math.PI : 0;
               }
             }
           }
 
-          if (entry.rig) {
-            const isKingChecked = Boolean(checkSq && entry.square === checkSq);
+          const isKingChecked = Boolean(checkSq && entry.square === checkSq);
+          if (entry.glbPiece) {
+            entry.glbPiece.update(dt, nowSec, isKingChecked, isUltra || entry.isMoving);
+          } else if (entry.rig && (isUltra || entry.isMoving)) {
             updateLivingCharacterRigAnimation(entry.rig, nowSec, isKingChecked);
           }
         }
@@ -1162,9 +1708,10 @@ export default function ChessBoard3D({
     });
     resizeObserver.observe(container);
 
-    syncSceneWithProps();
+    syncSceneWithProps(false);
 
     return () => {
+      disposed = true;
       cancelAnimationFrame(frameId);
       clearTimeout(frameId);
       resizeObserver.disconnect();
@@ -1174,30 +1721,31 @@ export default function ChessBoard3D({
       domEl.removeEventListener('webglcontextlost', handleContextLost);
       controls.dispose();
       outerFrameGeo.dispose();
-      plinthGeo.dispose();
       coordTex.dispose();
       coordPlaneGeo.dispose();
       coordPlaneMat.dispose();
       squareGeo.dispose();
+      lightSquaresInstanced.dispose();
+      darkSquaresInstanced.dispose();
       highlightPlaneGeo.dispose();
+      squareBorderRingGeo.dispose();
+      destBorderMat.dispose();
       legalDotGeo.dispose();
+      legalOuterRingGeo.dispose();
       legalRingGeo.dispose();
       checkRingGeo.dispose();
       duelImpactRingGeo.dispose();
+      motionTrailRingGeo.dispose();
+      whiteTrailMat.dispose();
+      blackTrailMat.dispose();
       envTarget.dispose();
-      grandChamber.dispose();
+      fallbackChamber.dispose();
       materials.dispose();
       stauntonCache.dispose();
       livingCache.dispose();
       renderer.dispose();
     };
-  }, [
-    use2DBoard,
-    isLowQuality,
-    shadowsEnabled,
-    visualSettings.graphicsQuality,
-    visualSettings.showChamberRoom,
-  ]);
+  }, [use2DBoard]);
 
   const handleSelectCameraPreset = useCallback((preset: CameraViewPreset) => {
     setCameraPreset(preset);
@@ -1243,10 +1791,10 @@ export default function ChessBoard3D({
                   }}
                   className={`relative flex items-center justify-center select-none transition-colors ${
                     isLight ? 'bg-[#E7D5B5] text-[#38251C]' : 'bg-[#9A6A45] text-[#F2E9DC]'
-                  } ${isSelected ? 'ring-2 ring-inset ring-[#C7A66A] bg-[#C7A66A]/40' : ''} ${
-                    isHint ? 'ring-2 ring-inset ring-[#38BDF8] bg-[#38BDF8]/30' : ''
+                  } ${isSelected ? 'ring-2 ring-inset ring-[#38BDF8] bg-[#38BDF8]/35' : ''} ${
+                    isHint ? 'ring-2 ring-inset ring-[#10B981] bg-[#10B981]/30' : ''
                   } ${
-                    isLastMove ? 'after:absolute after:inset-0 after:bg-[#C7A66A]/25' : ''
+                    isLastMove ? 'after:absolute after:inset-0 after:bg-[#F59E0B]/35' : ''
                   } ${isKingCheck ? 'bg-[#D9534F]/75' : ''}`}
                 >
                   {piece && (
@@ -1262,8 +1810,8 @@ export default function ChessBoard3D({
                     <span
                       className={`z-20 pointer-events-none ${
                         legalOption.captured
-                          ? 'w-9 h-9 rounded-full border-4 border-[#C7A66A]/90'
-                          : 'w-3.5 h-3.5 rounded-full bg-[#C7A66A]/90'
+                          ? 'w-9 h-9 rounded-full border-4 border-[#E11D48]'
+                          : 'w-3.5 h-3.5 rounded-full bg-[#38BDF8]'
                       }`}
                     />
                   )}
@@ -1277,11 +1825,56 @@ export default function ChessBoard3D({
   };
 
   return (
-    <div className="relative w-full h-full min-h-[420px] bg-[#14110F] overflow-hidden select-none rounded-xl border border-[#38251C]">
+    <div className="relative w-full h-full min-h-[420px] bg-[#090706] overflow-hidden select-none rounded-xl border border-[#38251C]">
       {webglFallback || use2DBoard ? (
         render2DFallbackBoard()
       ) : (
         <div ref={mountRef} className="w-full h-full" />
+      )}
+
+      {/* GLB Cathedral & Pieces Loading Indicator */}
+      {loadingProgress && !use2DBoard && !webglFallback && (
+        <div className="absolute top-3 left-3 z-20 px-3.5 py-2 rounded-lg bg-[#171310]/95 border border-[#C7A66A]/50 shadow-xl flex items-center gap-3 pointer-events-none">
+          <div className="w-24 h-1.5 bg-[#2B211B] rounded-full overflow-hidden">
+            <div
+              className="h-full bg-[#C7A66A] transition-all duration-200"
+              style={{
+                width: `${Math.round((loadingProgress.loaded / loadingProgress.total) * 100)}%`,
+              }}
+            />
+          </div>
+          <span className="text-[11px] font-medium text-[#F2E9DC]/90 whitespace-nowrap">
+            Memuat 3D GLB ({loadingProgress.loaded}/{loadingProgress.total}):{' '}
+            <strong className="text-[#C7A66A]">{loadingProgress.label}</strong>
+          </span>
+        </div>
+      )}
+
+      {/* Top-Left Clear Movement & Selection Status Badge */}
+      {!loadingProgress && (lastMove || selectedSquare) && !use2DBoard && (
+        <div className="absolute top-3 left-3 z-20 px-3 py-1.5 rounded-lg bg-[#171310]/90 border border-[#38251C] shadow-lg flex items-center gap-2.5 text-xs text-[#F2E9DC]/90 pointer-events-none">
+          {selectedSquare ? (
+            <span>
+              Petak Aktif:{' '}
+              <strong className="font-mono uppercase text-[#38BDF8]">{selectedSquare}</strong>
+              <span aria-hidden="true" className="mx-1.5 text-[#F2E9DC]/40">
+                ·
+              </span>
+              <span className="text-[#F2E9DC]/75">
+                {legalMoves.length} langkah tersedia
+              </span>
+            </span>
+          ) : (
+            lastMove && (
+              <span>
+                Langkah Terakhir:{' '}
+                <strong className="font-mono uppercase text-[#FBBF24]">
+                  {lastMove.from} → {lastMove.to}
+                </strong>
+              </span>
+            )
+          )}
+        </div>
       )}
 
       {/* Cinematic Duel Capture Callout Banner */}
@@ -1350,10 +1943,10 @@ export default function ChessBoard3D({
                   ? 'bg-[#C7A66A] text-[#171513]'
                   : 'text-[#F2E9DC]/80 hover:bg-[#38251C] hover:text-[#F2E9DC]'
               }`}
-              title="Sudut Ruangan Sinematik (Grand Chamber View)"
+              title="Sudut Ruangan Katedral Sinematik (Cathedral View)"
             >
               <Camera className="w-3.5 h-3.5" />
-              <span>Ruang Sinematik</span>
+              <span>Katedral 3D</span>
             </button>
 
             <button
@@ -1364,11 +1957,27 @@ export default function ChessBoard3D({
                   ? 'bg-[#C7A66A] text-[#171513]'
                   : 'text-[#F2E9DC]/80 hover:bg-[#38251C] hover:text-[#F2E9DC]'
               }`}
-              title="Inspeksi Detail Karakter Hidup (Inspection View)"
+              title="Inspeksi Detail Karakter GLB (Inspection View)"
             >
               <Search className="w-3.5 h-3.5" />
-              <span>Inspeksi Karakter</span>
+              <span>Inspeksi Bidak</span>
             </button>
+
+            {!use2DBoard && (
+              <button
+                type="button"
+                onClick={() => setShowMoveArrow((prev) => !prev)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+                  showMoveArrow
+                    ? 'bg-[#38251C] text-[#FBBF24] border border-[#FBBF24]/50'
+                    : 'text-[#F2E9DC]/80 hover:bg-[#38251C] hover:text-[#F2E9DC]'
+                }`}
+                title="Tampilkan / Sembunyikan Panah Jalur Pergerakan Bidak 3D"
+              >
+                <Navigation className="w-3.5 h-3.5" />
+                <span>Jalur: {showMoveArrow ? 'Aktif' : 'Mati'}</span>
+              </button>
+            )}
 
             {onUpdateVisualSettings && !use2DBoard && (
               <button
@@ -1383,11 +1992,11 @@ export default function ChessBoard3D({
                     ? 'bg-[#38251C] text-[#C7A66A] border border-[#C7A66A]/60'
                     : 'text-[#F2E9DC]/80 hover:bg-[#38251C] hover:text-[#F2E9DC]'
                 }`}
-                title="Beralih antara Karakter Hidup 3D dan Bidak Staunton Klasik"
+                title="Beralih antara Karakter Katedral GLB dan Bidak Staunton Klasik"
               >
                 <Crown className="w-3.5 h-3.5" />
                 <span>
-                  {pieceStyle === 'living' ? 'Bidak: Karakter Hidup' : 'Bidak: Staunton Klasik'}
+                  {pieceStyle === 'living' ? 'Bidak: Karakter GLB' : 'Bidak: Staunton Klasik'}
                 </span>
               </button>
             )}
@@ -1435,20 +2044,19 @@ export default function ChessBoard3D({
               <button
                 type="button"
                 onClick={() => {
-                  const order: ArenaVisualSettings['graphicsQuality'][] = [
-                    'low',
-                    'medium',
-                    'high',
-                    'ultra',
-                  ];
+                  const order: GraphicsQualityPreset[] = ['low', 'medium', 'high', 'ultra'];
                   const nextIdx = (order.indexOf(visualSettings.graphicsQuality) + 1) % order.length;
                   onUpdateVisualSettings({ graphicsQuality: order[nextIdx] });
                 }}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium text-[#F2E9DC]/80 hover:bg-[#38251C] hover:text-[#F2E9DC] transition-colors whitespace-nowrap shrink-0"
-                title="Kualitas Grafis Ruangan 3D"
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+                  visualSettings.graphicsQuality === 'ultra'
+                    ? 'bg-[#38251C] text-[#FBBF24] border border-[#FBBF24]/60'
+                    : 'text-[#F2E9DC]/80 hover:bg-[#38251C] hover:text-[#F2E9DC]'
+                }`}
+                title="Kualitas Grafis 3D (Default: LOW untuk Perangkat Kentang, ULTRA untuk Realistis Sinematik)"
               >
                 <Sparkles className="w-3.5 h-3.5 text-[#C7A66A]" />
-                <span>Grafis: {visualSettings.graphicsQuality.toUpperCase()}</span>
+                <span>Grafis: {QUALITY_LABELS[visualSettings.graphicsQuality]}</span>
               </button>
             )}
 

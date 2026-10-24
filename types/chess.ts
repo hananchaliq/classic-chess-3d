@@ -82,10 +82,10 @@ export interface ArenaVisualSettings {
 }
 
 export const DEFAULT_VISUAL_SETTINGS: ArenaVisualSettings = {
-  graphicsQuality: 'high',
+  graphicsQuality: 'low',
   pieceStyle: 'living',
   cinematicCaptures: 'on',
-  shadows: 'high',
+  shadows: 'off',
   showChamberRoom: true,
   cameraSensitivity: 1.0,
   motionReduced: false,
