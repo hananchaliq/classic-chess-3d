@@ -33,10 +33,13 @@ interface InternalPlayerSeat {
   ready: boolean;
   rating: number;
   disconnectedAt: number | null;
+  lastSeenAt: number;
 }
 
 interface InternalRoomState {
   roomCode: string;
+  version: number;
+  updatedAt: number;
   status: RoomStatus;
   visibility: RoomVisibility;
   timeControl: TimeControlPreset;
@@ -63,13 +66,21 @@ interface InternalRoomState {
 }
 
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const ABANDON_TIMEOUT_MS = 90 * 1000; // 90s grace period for reconnecting
-const TMP_STORE_PATH = path.join(os.tmpdir(), 'classic_chess_3d_rooms_v1.json');
+const ABANDON_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes grace period for reconnecting
+const ACTIVE_HTTP_HEARTBEAT_MS = 15 * 1000; // 15s window where HTTP poll keeps seat connected
+const TMP_STORE_PATH = path.join(os.tmpdir(), 'classic_chess_3d_rooms_v2.json');
 
 export class GameRoomManager {
   private rooms = new Map<string, InternalRoomState>();
+  private deletedRooms = new Map<string, number>();
   private socketToRoom = new Map<string, { roomCode: string; sessionToken: string }>();
   private chatRateMap = new Map<string, number[]>();
+  private lastDiskPersistAt = 0;
+
+  private bumpRoomVersion(room: InternalRoomState, now = Date.now()): void {
+    room.version = (room.version || 1) + 1;
+    room.updatedAt = now;
+  }
 
   private generateRoomCode(): string {
     for (let attempt = 0; attempt < 20; attempt++) {
@@ -144,13 +155,15 @@ export class GameRoomManager {
     systemNote: string
   ): void {
     if (room.status === 'finished' || room.status === 'abandoned') return;
+    const now = Date.now();
     room.status = 'finished';
     room.result = result;
     room.winnerColor = winnerColor;
     room.terminationReason = reason;
     room.drawOfferBy = null;
-    room.finishedAt = Date.now();
+    room.finishedAt = now;
     this.addSystemMessage(room, systemNote);
+    this.bumpRoomVersion(room, now);
   }
 
   public toPublicSeat(seat: InternalPlayerSeat | null): PublicPlayerSeat | null {
@@ -180,6 +193,8 @@ export class GameRoomManager {
     const evalState = evaluateChessInstance(room.chess);
     return {
       roomCode: room.roomCode,
+      version: room.version,
+      updatedAt: room.updatedAt,
       status: room.status,
       visibility: room.visibility,
       timeControl: room.timeControl,
@@ -233,6 +248,7 @@ export class GameRoomManager {
     const playerId = this.generatePlayerId(params.sessionToken);
     const displayName = this.sanitizeName(params.playerName, 'Pemain 1');
     const visibility: RoomVisibility = params.visibility || 'public';
+    const now = Date.now();
 
     const seat: InternalPlayerSeat = {
       sessionToken: params.sessionToken,
@@ -244,13 +260,15 @@ export class GameRoomManager {
       ready: true,
       rating: 1200,
       disconnectedAt: null,
+      lastSeenAt: now,
     };
 
-    const now = Date.now();
     const chess = new Chess(INITIAL_FEN);
 
     const room: InternalRoomState = {
       roomCode,
+      version: 1,
+      updatedAt: now,
       status: 'waiting',
       visibility,
       timeControl: preset.id,
@@ -281,6 +299,7 @@ export class GameRoomManager {
       `Room ${roomCode} (${visibility === 'private' ? 'Privat' : 'Publik'}) dibuat oleh ${displayName} (${preset.label}). Menunggu lawan bergabung.`
     );
 
+    this.deletedRooms.delete(roomCode);
     this.rooms.set(roomCode, room);
     this.socketToRoom.set(params.socketId, {
       roomCode,
@@ -313,7 +332,8 @@ export class GameRoomManager {
       };
     }
 
-    this.updateLiveClocks(room);
+    const now = Date.now();
+    this.updateLiveClocks(room, now);
     const playerId = this.generatePlayerId(params.sessionToken);
 
     // 1. Check if this sessionToken is reconnecting to an existing seat
@@ -321,6 +341,7 @@ export class GameRoomManager {
       room.whiteSeat.socketId = params.socketId;
       room.whiteSeat.connected = true;
       room.whiteSeat.disconnectedAt = null;
+      room.whiteSeat.lastSeenAt = now;
       if (params.playerName.trim()) {
         room.whiteSeat.displayName = this.sanitizeName(
           params.playerName,
@@ -331,6 +352,7 @@ export class GameRoomManager {
         roomCode: normalizedCode,
         sessionToken: params.sessionToken,
       });
+      this.bumpRoomVersion(room, now);
       this.persistToTmp();
       return {
         ok: true,
@@ -345,6 +367,7 @@ export class GameRoomManager {
       room.blackSeat.socketId = params.socketId;
       room.blackSeat.connected = true;
       room.blackSeat.disconnectedAt = null;
+      room.blackSeat.lastSeenAt = now;
       if (params.playerName.trim()) {
         room.blackSeat.displayName = this.sanitizeName(
           params.playerName,
@@ -355,6 +378,7 @@ export class GameRoomManager {
         roomCode: normalizedCode,
         sessionToken: params.sessionToken,
       });
+      this.bumpRoomVersion(room, now);
       this.persistToTmp();
       return {
         ok: true,
@@ -383,6 +407,7 @@ export class GameRoomManager {
         ready: false,
         rating: 1200,
         disconnectedAt: null,
+        lastSeenAt: now,
       };
 
       if (openColor === 'w') {
@@ -393,13 +418,14 @@ export class GameRoomManager {
 
       this.addSystemMessage(
         room,
-        `${displayName} bergabung sebagai ${openColor === 'w' ? 'Putih' : 'Hitam'}. Tekan "Siap Mulai" untuk memulai pertandingan!`
+        `${displayName} bergabung sebagai ${openColor === 'w' ? 'Putih' : 'Hitam'}. Tekan "Mulai Pertandingan" untuk bermain!`
       );
 
       this.socketToRoom.set(params.socketId, {
         roomCode: normalizedCode,
         sessionToken: params.sessionToken,
       });
+      this.bumpRoomVersion(room, now);
       this.persistToTmp();
 
       return {
@@ -416,6 +442,7 @@ export class GameRoomManager {
       roomCode: normalizedCode,
       sessionToken: params.sessionToken,
     });
+    this.bumpRoomVersion(room, now);
     this.persistToTmp();
 
     return {
@@ -431,11 +458,12 @@ export class GameRoomManager {
     sessionToken: string;
   }): { ok: boolean; error?: string; started?: boolean; room?: RoomStateSnapshot } {
     this.hydrateFromTmpIfNeeded();
-    const room = this.rooms.get(params.roomCode.toUpperCase());
+    const room = this.rooms.get(params.roomCode.trim().toUpperCase());
     if (!room) {
       return { ok: false, error: 'Room tidak ditemukan.' };
     }
 
+    const now = Date.now();
     let seat: InternalPlayerSeat | null = null;
     if (room.whiteSeat?.sessionToken === params.sessionToken) {
       seat = room.whiteSeat;
@@ -444,22 +472,26 @@ export class GameRoomManager {
     }
 
     if (!seat) {
-      return { ok: false, error: 'Hanya pemain di kursi Putih/Hitam yang dapat mengubah status siap.' };
+      return {
+        ok: false,
+        error: 'Hanya pemain di kursi Putih/Hitam yang dapat memulai pertandingan.',
+      };
     }
 
     seat.ready = true;
+    seat.connected = true;
+    seat.disconnectedAt = null;
+    seat.lastSeenAt = now;
 
+    // Allow EITHER the host accepting the challenger OR the challenger clicking ready
+    // to immediately start the match once both White and Black seats are occupied.
     let started = false;
-    if (
-      room.status === 'waiting' &&
-      room.whiteSeat &&
-      room.blackSeat &&
-      room.whiteSeat.ready &&
-      room.blackSeat.ready
-    ) {
+    if (room.status === 'waiting' && room.whiteSeat && room.blackSeat) {
+      room.whiteSeat.ready = true;
+      room.blackSeat.ready = true;
       room.status = 'active';
-      room.startedAt = Date.now();
-      room.lastClockUpdateAt = Date.now();
+      room.startedAt = now;
+      room.lastClockUpdateAt = now;
       started = true;
       this.addSystemMessage(
         room,
@@ -467,6 +499,7 @@ export class GameRoomManager {
       );
     }
 
+    this.bumpRoomVersion(room, now);
     this.persistToTmp();
     return {
       ok: true,
@@ -490,17 +523,22 @@ export class GameRoomManager {
     gameFinished?: boolean;
   } {
     this.hydrateFromTmpIfNeeded();
-    const room = this.rooms.get(params.roomCode.toUpperCase());
+    const room = this.rooms.get(params.roomCode.trim().toUpperCase());
     if (!room) {
       return { ok: false, error: 'Room tidak ditemukan.' };
     }
 
     if (room.status !== 'active') {
-      return { ok: false, error: 'Pertandingan belum dimulai atau sudah berakhir.' };
+      return {
+        ok: false,
+        error: 'Pertandingan belum dimulai atau sudah berakhir.',
+        room: this.toSnapshot(room),
+      };
     }
 
+    const now = Date.now();
     // Update server clock first; check if active player ran out of time
-    const timedOut = this.updateLiveClocks(room);
+    const timedOut = this.updateLiveClocks(room, now);
     if (timedOut) {
       this.persistToTmp();
       return {
@@ -518,8 +556,13 @@ export class GameRoomManager {
       return {
         ok: false,
         error: 'Bukan giliran Anda atau Anda tidak memiliki otorisasi kursi ini.',
+        room: this.toSnapshot(room),
       };
     }
+
+    expectedSeat.connected = true;
+    expectedSeat.disconnectedAt = null;
+    expectedSeat.lastSeenAt = now;
 
     // Idempotency guard: if client sends expected ply and it doesn't match server ply
     if (typeof params.ply === 'number' && params.ply !== room.moveHistory.length) {
@@ -530,7 +573,6 @@ export class GameRoomManager {
       };
     }
 
-    const now = Date.now();
     let moveObj;
     try {
       moveObj = room.chess.move({
@@ -542,6 +584,7 @@ export class GameRoomManager {
       return {
         ok: false,
         error: `Langkah ${params.from} ke ${params.to} tidak legal menurut aturan catur.`,
+        room: this.toSnapshot(room),
       };
     }
 
@@ -549,6 +592,7 @@ export class GameRoomManager {
       return {
         ok: false,
         error: 'Langkah tidak legal.',
+        room: this.toSnapshot(room),
       };
     }
 
@@ -619,6 +663,8 @@ export class GameRoomManager {
         evalAfter.terminationReason,
         reasonMap[evalAfter.terminationReason || ''] || 'Pertandingan berakhir.'
       );
+    } else {
+      this.bumpRoomVersion(room, now);
     }
 
     this.persistToTmp();
@@ -635,7 +681,7 @@ export class GameRoomManager {
     sessionToken: string;
   }): { ok: boolean; error?: string; room?: RoomStateSnapshot } {
     this.hydrateFromTmpIfNeeded();
-    const room = this.rooms.get(params.roomCode.toUpperCase());
+    const room = this.rooms.get(params.roomCode.trim().toUpperCase());
     if (!room || room.status !== 'active') {
       return { ok: false, error: 'Pertandingan tidak aktif.' };
     }
@@ -656,6 +702,7 @@ export class GameRoomManager {
 
     room.drawOfferBy = color;
     this.addSystemMessage(room, `${playerName} menawarkan remis (Draw).`);
+    this.bumpRoomVersion(room);
     this.persistToTmp();
     return { ok: true, room: this.toSnapshot(room) };
   }
@@ -666,7 +713,7 @@ export class GameRoomManager {
     accept: boolean;
   }): { ok: boolean; error?: string; room?: RoomStateSnapshot; gameFinished?: boolean } {
     this.hydrateFromTmpIfNeeded();
-    const room = this.rooms.get(params.roomCode.toUpperCase());
+    const room = this.rooms.get(params.roomCode.trim().toUpperCase());
     if (!room || room.status !== 'active' || !room.drawOfferBy) {
       return { ok: false, error: 'Tidak ada tawaran remis yang aktif.' };
     }
@@ -698,6 +745,7 @@ export class GameRoomManager {
     } else {
       room.drawOfferBy = null;
       this.addSystemMessage(room, `${responderName} menolak tawaran remis.`);
+      this.bumpRoomVersion(room);
       this.persistToTmp();
       return { ok: true, room: this.toSnapshot(room), gameFinished: false };
     }
@@ -708,7 +756,7 @@ export class GameRoomManager {
     sessionToken: string;
   }): { ok: boolean; error?: string; room?: RoomStateSnapshot; gameFinished?: boolean } {
     this.hydrateFromTmpIfNeeded();
-    const room = this.rooms.get(params.roomCode.toUpperCase());
+    const room = this.rooms.get(params.roomCode.trim().toUpperCase());
     if (!room || room.status !== 'active') {
       return { ok: false, error: 'Pertandingan tidak aktif.' };
     }
@@ -756,7 +804,7 @@ export class GameRoomManager {
     sessionToken: string;
   }): { ok: boolean; error?: string; room?: RoomStateSnapshot; gameFinished?: boolean } {
     this.hydrateFromTmpIfNeeded();
-    const room = this.rooms.get(params.roomCode.toUpperCase());
+    const room = this.rooms.get(params.roomCode.trim().toUpperCase());
     if (!room || room.status !== 'active') {
       return { ok: false, error: 'Pertandingan tidak aktif.' };
     }
@@ -797,7 +845,7 @@ export class GameRoomManager {
     sessionToken: string;
   }): { ok: boolean; error?: string; room?: RoomStateSnapshot } {
     this.hydrateFromTmpIfNeeded();
-    const room = this.rooms.get(params.roomCode.toUpperCase());
+    const room = this.rooms.get(params.roomCode.trim().toUpperCase());
     if (!room) {
       return { ok: false, error: 'Room tidak ditemukan.' };
     }
@@ -813,12 +861,23 @@ export class GameRoomManager {
       return { ok: false, error: 'Pertandingan masih berlangsung.' };
     }
 
+    const now = Date.now();
     // Swap colors for fairness on rematch if both seats exist
     const oldWhite = room.whiteSeat;
     const oldBlack = room.blackSeat;
     if (oldWhite && oldBlack) {
       oldWhite.color = 'b';
+      oldWhite.ready = true;
+      oldWhite.connected = true;
+      oldWhite.disconnectedAt = null;
+      oldWhite.lastSeenAt = now;
+
       oldBlack.color = 'w';
+      oldBlack.ready = true;
+      oldBlack.connected = true;
+      oldBlack.disconnectedAt = null;
+      oldBlack.lastSeenAt = now;
+
       room.whiteSeat = oldBlack;
       room.blackSeat = oldWhite;
     }
@@ -834,12 +893,13 @@ export class GameRoomManager {
     room.terminationReason = null;
     room.whiteMs = preset.initialMs;
     room.blackMs = preset.initialMs;
-    room.lastClockUpdateAt = Date.now();
-    room.startedAt = Date.now();
+    room.lastClockUpdateAt = now;
+    room.startedAt = now;
     room.finishedAt = null;
     room.status = room.whiteSeat && room.blackSeat ? 'active' : 'waiting';
 
     this.addSystemMessage(room, 'Pertandingan baru dimulai dengan pertukaran warna sisi!');
+    this.bumpRoomVersion(room, now);
     this.persistToTmp();
     return { ok: true, room: this.toSnapshot(room) };
   }
@@ -849,7 +909,7 @@ export class GameRoomManager {
     sessionToken: string;
   }): { ok: boolean; error?: string } {
     this.hydrateFromTmpIfNeeded();
-    const code = params.roomCode.toUpperCase();
+    const code = params.roomCode.trim().toUpperCase();
     const room = this.rooms.get(code);
     if (!room) {
       return { ok: false, error: 'Room tidak ditemukan.' };
@@ -862,7 +922,16 @@ export class GameRoomManager {
       return { ok: false, error: 'Hanya pembuat room yang dapat membatalkan room.' };
     }
 
+    // Do not allow cancelling if the game is already active
+    if (room.status === 'active') {
+      return {
+        ok: false,
+        error: 'Pertandingan sedang berlangsung. Gunakan tombol Menyerah atau keluar.',
+      };
+    }
+
     this.rooms.delete(code);
+    this.deletedRooms.set(code, Date.now());
     this.persistToTmp();
     return { ok: true };
   }
@@ -873,7 +942,7 @@ export class GameRoomManager {
     message: string;
   }): { ok: boolean; error?: string; chatItem?: ChatMessageItem } {
     this.hydrateFromTmpIfNeeded();
-    const room = this.rooms.get(params.roomCode.toUpperCase());
+    const room = this.rooms.get(params.roomCode.trim().toUpperCase());
     if (!room) {
       return { ok: false, error: 'Room tidak ditemukan.' };
     }
@@ -886,8 +955,8 @@ export class GameRoomManager {
       return { ok: false, error: 'Pesan terlalu panjang (maksimal 240 karakter).' };
     }
 
-    // Rate limiting: max 5 messages per 5 seconds per sessionToken
     const now = Date.now();
+    // Rate limiting: max 5 messages per 5 seconds per sessionToken
     const recent = (this.chatRateMap.get(params.sessionToken) || []).filter(
       (t) => now - t < 5000
     );
@@ -904,9 +973,15 @@ export class GameRoomManager {
     if (room.whiteSeat?.sessionToken === params.sessionToken) {
       senderName = room.whiteSeat.displayName;
       senderColor = 'w';
+      room.whiteSeat.lastSeenAt = now;
+      room.whiteSeat.connected = true;
+      room.whiteSeat.disconnectedAt = null;
     } else if (room.blackSeat?.sessionToken === params.sessionToken) {
       senderName = room.blackSeat.displayName;
       senderColor = 'b';
+      room.blackSeat.lastSeenAt = now;
+      room.blackSeat.connected = true;
+      room.blackSeat.disconnectedAt = null;
     }
 
     const item: ChatMessageItem = {
@@ -923,6 +998,7 @@ export class GameRoomManager {
       room.chatMessages.shift();
     }
 
+    this.bumpRoomVersion(room, now);
     this.persistToTmp();
     return { ok: true, chatItem: item };
   }
@@ -937,6 +1013,7 @@ export class GameRoomManager {
     if (!mapping) return {};
     this.socketToRoom.delete(socketId);
 
+    this.hydrateFromTmpIfNeeded();
     const room = this.rooms.get(mapping.roomCode);
     if (!room) return {};
 
@@ -945,28 +1022,40 @@ export class GameRoomManager {
       return { roomCode: room.roomCode, room: this.toSnapshot(room) };
     }
 
+    const now = Date.now();
     if (room.whiteSeat?.socketId === socketId) {
-      room.whiteSeat.connected = false;
       room.whiteSeat.socketId = null;
-      room.whiteSeat.disconnectedAt = Date.now();
-      return {
-        roomCode: room.roomCode,
-        disconnectedColor: 'w',
-        playerName: room.whiteSeat.displayName,
-        room: this.toSnapshot(room),
-      };
+      // Only mark disconnected if player hasn't polled via HTTP recently
+      if (now - (room.whiteSeat.lastSeenAt || 0) > ACTIVE_HTTP_HEARTBEAT_MS) {
+        room.whiteSeat.connected = false;
+        room.whiteSeat.disconnectedAt = now;
+        this.bumpRoomVersion(room, now);
+        this.persistToTmp();
+        return {
+          roomCode: room.roomCode,
+          disconnectedColor: 'w',
+          playerName: room.whiteSeat.displayName,
+          room: this.toSnapshot(room),
+        };
+      }
+      return {};
     }
 
     if (room.blackSeat?.socketId === socketId) {
-      room.blackSeat.connected = false;
       room.blackSeat.socketId = null;
-      room.blackSeat.disconnectedAt = Date.now();
-      return {
-        roomCode: room.roomCode,
-        disconnectedColor: 'b',
-        playerName: room.blackSeat.displayName,
-        room: this.toSnapshot(room),
-      };
+      if (now - (room.blackSeat.lastSeenAt || 0) > ACTIVE_HTTP_HEARTBEAT_MS) {
+        room.blackSeat.connected = false;
+        room.blackSeat.disconnectedAt = now;
+        this.bumpRoomVersion(room, now);
+        this.persistToTmp();
+        return {
+          roomCode: room.roomCode,
+          disconnectedColor: 'b',
+          playerName: room.blackSeat.displayName,
+          room: this.toSnapshot(room),
+        };
+      }
+      return {};
     }
 
     return {};
@@ -977,7 +1066,9 @@ export class GameRoomManager {
     clock: ClockSnapshot;
     finishedRoom?: RoomStateSnapshot;
   }> {
+    this.hydrateFromTmpIfNeeded();
     const now = Date.now();
+    let stateMutated = false;
     const updates: Array<{
       roomCode: string;
       clock: ClockSnapshot;
@@ -988,6 +1079,7 @@ export class GameRoomManager {
       if (room.status === 'active') {
         const timedOut = this.updateLiveClocks(room, now);
         if (timedOut) {
+          stateMutated = true;
           updates.push({
             roomCode,
             clock: this.getClockSnapshot(room),
@@ -996,12 +1088,13 @@ export class GameRoomManager {
           continue;
         }
 
-        // Check disconnect abandonment grace period
+        // Check disconnect abandonment grace period (requires both disconnectedAt and no recent HTTP poll)
         if (
           room.whiteSeat &&
           !room.whiteSeat.connected &&
           room.whiteSeat.disconnectedAt &&
-          now - room.whiteSeat.disconnectedAt > ABANDON_TIMEOUT_MS
+          now - room.whiteSeat.disconnectedAt > ABANDON_TIMEOUT_MS &&
+          now - (room.whiteSeat.lastSeenAt || 0) > ABANDON_TIMEOUT_MS
         ) {
           this.finishGame(
             room,
@@ -1010,6 +1103,7 @@ export class GameRoomManager {
             'abandoned',
             `${room.whiteSeat.displayName} (Putih) tidak kembali dalam batas waktu rekoneksi. Hitam menang.`
           );
+          stateMutated = true;
           updates.push({
             roomCode,
             clock: this.getClockSnapshot(room),
@@ -1022,7 +1116,8 @@ export class GameRoomManager {
           room.blackSeat &&
           !room.blackSeat.connected &&
           room.blackSeat.disconnectedAt &&
-          now - room.blackSeat.disconnectedAt > ABANDON_TIMEOUT_MS
+          now - room.blackSeat.disconnectedAt > ABANDON_TIMEOUT_MS &&
+          now - (room.blackSeat.lastSeenAt || 0) > ABANDON_TIMEOUT_MS
         ) {
           this.finishGame(
             room,
@@ -1031,6 +1126,7 @@ export class GameRoomManager {
             'abandoned',
             `${room.blackSeat.displayName} (Hitam) tidak kembali dalam batas waktu rekoneksi. Putih menang.`
           );
+          stateMutated = true;
           updates.push({
             roomCode,
             clock: this.getClockSnapshot(room),
@@ -1048,6 +1144,10 @@ export class GameRoomManager {
       }
     }
 
+    if (stateMutated) {
+      this.persistToTmp();
+    }
+
     return updates;
   }
 
@@ -1056,31 +1156,63 @@ export class GameRoomManager {
     sessionToken: string;
   }): {
     ok: boolean;
+    errorCode?: 'ROOM_CANCELLED' | 'ROOM_NOT_FOUND';
     error?: string;
     room?: RoomStateSnapshot;
     yourRole?: YourRoleInRoom;
   } {
     this.hydrateFromTmpIfNeeded();
     const code = params.roomCode.trim().toUpperCase();
-    const room = this.rooms.get(code);
-    if (!room) {
-      return { ok: false, error: 'Room tidak ditemukan atau sudah ditutup.' };
+
+    if (this.deletedRooms.has(code) && !this.rooms.has(code)) {
+      return {
+        ok: false,
+        errorCode: 'ROOM_CANCELLED',
+        error: 'Room telah dibatalkan oleh pembuat room.',
+      };
     }
 
-    this.updateLiveClocks(room, Date.now());
+    const room = this.rooms.get(code);
+    if (!room) {
+      return {
+        ok: false,
+        errorCode: 'ROOM_NOT_FOUND',
+        error: 'Room tidak ditemukan atau sudah ditutup.',
+      };
+    }
+
+    const now = Date.now();
+    const timedOut = this.updateLiveClocks(room, now);
+    let reconnectedSeat = false;
 
     let yourRole: YourRoleInRoom = 'spectator';
     if (room.whiteSeat?.sessionToken === params.sessionToken) {
+      if (!room.whiteSeat.connected) {
+        reconnectedSeat = true;
+      }
       room.whiteSeat.connected = true;
       room.whiteSeat.disconnectedAt = null;
+      room.whiteSeat.lastSeenAt = now;
       yourRole = 'w';
     } else if (room.blackSeat?.sessionToken === params.sessionToken) {
+      if (!room.blackSeat.connected) {
+        reconnectedSeat = true;
+      }
       room.blackSeat.connected = true;
       room.blackSeat.disconnectedAt = null;
+      room.blackSeat.lastSeenAt = now;
       yourRole = 'b';
     }
 
-    this.persistToTmp();
+    if (reconnectedSeat) {
+      this.bumpRoomVersion(room, now);
+    }
+
+    // Only write to disk on poll if state mutated or every 8 seconds for clock/heartbeat sync
+    if (timedOut || reconnectedSeat || now - this.lastDiskPersistAt > 8000) {
+      this.persistToTmp();
+    }
+
     return {
       ok: true,
       room: this.toSnapshot(room),
@@ -1090,13 +1222,20 @@ export class GameRoomManager {
 
   public persistToTmp(): void {
     try {
-      const serialized: Array<Record<string, unknown>> = [];
+      // Always merge latest disk state before writing so no worker overwrites another worker's changes
+      this.hydrateFromTmpIfNeeded();
+
       const now = Date.now();
+      this.lastDiskPersistAt = now;
+
+      const serializedRooms: Array<Record<string, unknown>> = [];
       for (const room of this.rooms.values()) {
-        // Prune rooms older than 6 hours
-        if (now - room.createdAt > 6 * 3600 * 1000) continue;
-        serialized.push({
+        // Prune rooms older than 12 hours
+        if (now - room.createdAt > 12 * 3600 * 1000) continue;
+        serializedRooms.push({
           roomCode: room.roomCode,
+          version: room.version || 1,
+          updatedAt: room.updatedAt || now,
           status: room.status,
           visibility: room.visibility,
           timeControl: room.timeControl,
@@ -1122,7 +1261,27 @@ export class GameRoomManager {
           finishedAt: room.finishedAt,
         });
       }
-      fs.writeFileSync(TMP_STORE_PATH, JSON.stringify(serialized), 'utf-8');
+
+      const deletedObj: Record<string, number> = {};
+      for (const [code, ts] of this.deletedRooms.entries()) {
+        if (now - ts < 2 * 3600 * 1000) {
+          deletedObj[code] = ts;
+        } else {
+          this.deletedRooms.delete(code);
+        }
+      }
+
+      const payload = JSON.stringify({
+        rooms: serializedRooms,
+        deletedRooms: deletedObj,
+      });
+
+      // Atomic write via unique temporary file + POSIX renameSync
+      const tmpFile = `${TMP_STORE_PATH}.${process.pid}.${now}.${crypto
+        .randomBytes(4)
+        .toString('hex')}.tmp`;
+      fs.writeFileSync(tmpFile, payload, 'utf-8');
+      fs.renameSync(tmpFile, TMP_STORE_PATH);
     } catch {
       // Ignore write errors in restricted environments
     }
@@ -1133,17 +1292,56 @@ export class GameRoomManager {
       if (!fs.existsSync(TMP_STORE_PATH)) return;
       const raw = fs.readFileSync(TMP_STORE_PATH, 'utf-8');
       if (!raw) return;
-      const parsed = JSON.parse(raw) as Array<Record<string, unknown>>;
-      if (!Array.isArray(parsed)) return;
+      const parsedData = JSON.parse(raw) as
+        | Array<Record<string, unknown>>
+        | {
+            rooms?: Array<Record<string, unknown>>;
+            deletedRooms?: Record<string, number>;
+          };
 
-      for (const item of parsed) {
+      const items = Array.isArray(parsedData)
+        ? parsedData
+        : Array.isArray(parsedData.rooms)
+        ? parsedData.rooms
+        : [];
+
+      const diskDeleted =
+        !Array.isArray(parsedData) && parsedData.deletedRooms ? parsedData.deletedRooms : {};
+
+      for (const [delCode, delTs] of Object.entries(diskDeleted)) {
+        const prevTs = this.deletedRooms.get(delCode) || 0;
+        if (delTs > prevTs) {
+          this.deletedRooms.set(delCode, delTs);
+        }
+        const existingRoom = this.rooms.get(delCode);
+        if (existingRoom && existingRoom.createdAt <= delTs) {
+          this.rooms.delete(delCode);
+        }
+      }
+
+      for (const item of items) {
         const code = String(item.roomCode || '');
         if (!code) continue;
-        const existing = this.rooms.get(code);
-        const itemPly = Array.isArray(item.moveHistory) ? item.moveHistory.length : 0;
-        const existingPly = existing ? existing.moveHistory.length : -1;
 
-        if (!existing || itemPly > existingPly || existing.status !== item.status) {
+        const createdAt = Number(item.createdAt ?? Date.now());
+        const deletedAt = this.deletedRooms.get(code) || 0;
+        if (deletedAt >= createdAt) {
+          this.rooms.delete(code);
+          continue;
+        }
+
+        const existing = this.rooms.get(code);
+        const itemVersion = Number(item.version ?? 1);
+        const itemUpdatedAt = Number(item.updatedAt ?? 0);
+        const existingVersion = existing ? existing.version || 1 : -1;
+        const existingUpdatedAt = existing ? existing.updatedAt || 0 : -1;
+
+        const shouldReplace =
+          !existing ||
+          itemVersion > existingVersion ||
+          (itemVersion === existingVersion && itemUpdatedAt > existingUpdatedAt);
+
+        if (shouldReplace) {
           const chess = new Chess();
           try {
             if (typeof item.pgn === 'string' && item.pgn.trim().length > 0) {
@@ -1163,6 +1361,8 @@ export class GameRoomManager {
 
           this.rooms.set(code, {
             roomCode: code,
+            version: itemVersion,
+            updatedAt: itemUpdatedAt || Date.now(),
             status: (item.status as RoomStatus) || 'waiting',
             visibility: (item.visibility as RoomVisibility) || 'public',
             timeControl: (item.timeControl as TimeControlPreset) || '5+0',
@@ -1183,10 +1383,24 @@ export class GameRoomManager {
             isUnlimited: Boolean(item.isUnlimited),
             lastClockUpdateAt: Number(item.lastClockUpdateAt ?? Date.now()),
             chatMessages: (item.chatMessages as ChatMessageItem[]) || [],
-            createdAt: Number(item.createdAt ?? Date.now()),
+            createdAt,
             startedAt: item.startedAt ? Number(item.startedAt) : null,
             finishedAt: item.finishedAt ? Number(item.finishedAt) : null,
           });
+        } else if (existing && itemVersion === existingVersion) {
+          // Sync heartbeats across workers even if room version is identical
+          const diskWhite = item.whiteSeat as InternalPlayerSeat | null;
+          const diskBlack = item.blackSeat as InternalPlayerSeat | null;
+          if (existing.whiteSeat && diskWhite && diskWhite.lastSeenAt > existing.whiteSeat.lastSeenAt) {
+            existing.whiteSeat.lastSeenAt = diskWhite.lastSeenAt;
+            existing.whiteSeat.connected = diskWhite.connected;
+            existing.whiteSeat.disconnectedAt = diskWhite.disconnectedAt;
+          }
+          if (existing.blackSeat && diskBlack && diskBlack.lastSeenAt > existing.blackSeat.lastSeenAt) {
+            existing.blackSeat.lastSeenAt = diskBlack.lastSeenAt;
+            existing.blackSeat.connected = diskBlack.connected;
+            existing.blackSeat.disconnectedAt = diskBlack.disconnectedAt;
+          }
         }
       }
     } catch {
@@ -1230,9 +1444,9 @@ export class GameRoomManager {
 }
 
 const globalForChess = globalThis as unknown as {
-  __classicChessRoomManager?: GameRoomManager;
+  __classicChessRoomManager_v2?: GameRoomManager;
 };
 
 export const gameRoomManager =
-  globalForChess.__classicChessRoomManager ||
-  (globalForChess.__classicChessRoomManager = new GameRoomManager());
+  globalForChess.__classicChessRoomManager_v2 ||
+  (globalForChess.__classicChessRoomManager_v2 = new GameRoomManager());

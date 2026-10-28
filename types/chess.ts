@@ -234,6 +234,8 @@ export interface RoomStateSnapshot {
   createdAt: number;
   startedAt: number | null;
   finishedAt: number | null;
+  version?: number;
+  updatedAt?: number;
 }
 
 export type YourRoleInRoom = 'w' | 'b' | 'spectator';

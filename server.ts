@@ -69,12 +69,24 @@ app.prepare().then(() => {
     maxHttpBufferSize: 64 * 1024, // 64KB max payload safety
   });
 
+  (globalThis as unknown as { __classicChessSocketIO?: SocketIOServer }).__classicChessSocketIO =
+    io;
+
   io.on('connection', (socket) => {
     // Send active open lobby list on connect
     socket.emit('lobby:rooms', gameRoomManager.listWaitingRooms());
 
     socket.on('lobby:list', () => {
       socket.emit('lobby:rooms', gameRoomManager.listWaitingRooms());
+    });
+
+    socket.on('room:subscribe', (rawPayload) => {
+      if (rawPayload && typeof rawPayload.roomCode === 'string') {
+        const code = rawPayload.roomCode.trim().toUpperCase();
+        if (code.length >= 4 && code.length <= 12) {
+          socket.join(code);
+        }
+      }
     });
 
     socket.on('room:create', (rawPayload, ack) => {

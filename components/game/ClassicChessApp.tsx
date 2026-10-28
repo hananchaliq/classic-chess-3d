@@ -114,7 +114,12 @@ const RULE_TEST_PRESETS: SpecialRuleTestPreset[] = [
 
 function getOrCreateTabSessionToken(): string {
   if (typeof window === 'undefined') return 'ssr_token_placeholder';
-  const key = 'classic_chess_3d_session_token_v1';
+  let tabId = window.name;
+  if (!tabId || !tabId.startsWith('chess_tab_')) {
+    tabId = 'chess_tab_' + Math.random().toString(36).slice(2, 10);
+    window.name = tabId;
+  }
+  const key = `classic_chess_3d_session_token_v2_${tabId}`;
   let token = window.sessionStorage.getItem(key);
   if (!token) {
     token =
@@ -222,9 +227,22 @@ export default function ClassicChessApp() {
   const [mpErrorBanner, setMpErrorBanner] = useState<string | null>(null);
   const prevMpPlyRef = useRef<number>(0);
   const prevMpStatusRef = useRef<string>('waiting');
+  const pollNotFoundCountRef = useRef<number>(0);
+  const activeRoomCodeRef = useRef<string | null>(null);
 
   const applyIncomingRoomSnapshot = useCallback((roomSnapshot: RoomStateSnapshot) => {
     setActiveRoom((prev) => {
+      // Prevent out-of-order stale HTTP or socket responses from reverting newer room state
+      if (
+        prev &&
+        prev.roomCode === roomSnapshot.roomCode &&
+        typeof prev.version === 'number' &&
+        typeof roomSnapshot.version === 'number' &&
+        roomSnapshot.version < prev.version
+      ) {
+        return prev;
+      }
+
       if (prev && prev.status === 'waiting' && roomSnapshot.status === 'active') {
         playGameBellSound();
       } else if (
@@ -293,7 +311,13 @@ export default function ClassicChessApp() {
           setWaitingRooms(data.waitingRooms);
         }
         if (data.room) {
-          applyIncomingRoomSnapshot(data.room as RoomStateSnapshot);
+          const snapshot = data.room as RoomStateSnapshot;
+          activeRoomCodeRef.current = snapshot.roomCode;
+          pollNotFoundCountRef.current = 0;
+          applyIncomingRoomSnapshot(snapshot);
+          if (socketRef.current?.connected) {
+            socketRef.current.emit('room:subscribe', { roomCode: snapshot.roomCode });
+          }
         }
         onComplete?.(data as T);
 
@@ -329,48 +353,54 @@ export default function ClassicChessApp() {
           const savedRoom = window.sessionStorage.getItem('classic_chess_active_room');
           const roomToJoin = urlRoom || savedRoom;
 
-        if (roomToJoin) {
-          setActiveTab('multiplayer');
-          dispatchMultiplayerAction<RoomJoinedResponse>(
-            'room:join',
-            {
-              sessionToken: sessionTokenRef.current,
-              roomCode: roomToJoin.toUpperCase(),
-              playerName: `Pemain ${suffix}`,
-            },
-            (res) => {
-              if (res.ok && res.room && res.yourRole) {
-                setActiveRoom(res.room);
-                setMyRole(res.yourRole);
-                prevMpPlyRef.current = res.room.ply;
-                prevMpStatusRef.current = res.room.status;
-                if (res.yourRole === 'w' || res.yourRole === 'b') {
-                  setMpOrientation(res.yourRole);
+          if (roomToJoin) {
+            setActiveTab('multiplayer');
+            dispatchMultiplayerAction<RoomJoinedResponse>(
+              'room:join',
+              {
+                sessionToken: sessionTokenRef.current,
+                roomCode: roomToJoin.toUpperCase(),
+                playerName: `Pemain ${suffix}`,
+              },
+              (res) => {
+                if (res.ok && res.room && res.yourRole) {
+                  activeRoomCodeRef.current = res.room.roomCode;
+                  pollNotFoundCountRef.current = 0;
+                  setActiveRoom(res.room);
+                  setMyRole(res.yourRole);
+                  prevMpPlyRef.current = res.room.ply;
+                  prevMpStatusRef.current = res.room.status;
+                  if (res.yourRole === 'w' || res.yourRole === 'b') {
+                    setMpOrientation(res.yourRole);
+                  }
+                  window.sessionStorage.setItem('classic_chess_active_room', res.room.roomCode);
+                } else if (urlRoom) {
+                  setMpErrorBanner(res.error || 'Tidak dapat bergabung ke room dari tautan.');
+                } else {
+                  window.sessionStorage.removeItem('classic_chess_active_room');
                 }
-                window.sessionStorage.setItem('classic_chess_active_room', res.room.roomCode);
-              } else if (urlRoom) {
-                setMpErrorBanner(res.error || 'Tidak dapat bergabung ke room dari tautan.');
-              } else {
-                window.sessionStorage.removeItem('classic_chess_active_room');
               }
-            }
-          );
-        }
+            );
+          }
         }
       });
     });
 
-    // 2. Optional Socket.IO accelerator when hosted on a stateful Node container (limited retries so Vercel stays clean)
+    // 2. Optional Socket.IO accelerator when hosted on a stateful Node container
     const socket = io({
       path: '/socket.io',
       transports: ['polling', 'websocket'],
-      reconnectionAttempts: 2,
-      timeout: 2500,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1500,
+      timeout: 5000,
     });
     socketRef.current = socket;
 
     socket.on('connect', () => {
       setSocketConnected(true);
+      if (activeRoomCodeRef.current) {
+        socket.emit('room:subscribe', { roomCode: activeRoomCodeRef.current });
+      }
     });
 
     socket.on('lobby:rooms', (rooms) => {
@@ -379,10 +409,13 @@ export default function ClassicChessApp() {
       }
     });
 
-    socket.on('room:cancelled', () => {
-      setActiveRoom(null);
-      if (typeof window !== 'undefined') {
-        window.sessionStorage.removeItem('classic_chess_active_room');
+    socket.on('room:cancelled', (payload?: { roomCode?: string }) => {
+      if (!payload?.roomCode || payload.roomCode === activeRoomCodeRef.current) {
+        activeRoomCodeRef.current = null;
+        setActiveRoom(null);
+        if (typeof window !== 'undefined') {
+          window.sessionStorage.removeItem('classic_chess_active_room');
+        }
       }
     });
 
@@ -425,34 +458,75 @@ export default function ClassicChessApp() {
     };
   }, [applyIncomingRoomSnapshot, dispatchMultiplayerAction, fetchLobbyViaHttp]);
 
+  const activeRoomCode = activeRoom?.roomCode ?? null;
+  const pollInFlightRef = useRef<boolean>(false);
+
   // Real-time Serverless Polling Loop for Vercel & Hybrid synchronization
+  // Stabilized on primitive activeRoomCode so interval is not torn down on every clock/state update
   useEffect(() => {
-    if (activeRoom) {
-      const code = activeRoom.roomCode;
+    activeRoomCodeRef.current = activeRoomCode;
+    if (activeRoomCode) {
+      pollNotFoundCountRef.current = 0;
+      pollInFlightRef.current = false;
       const interval = setInterval(async () => {
+        if (pollInFlightRef.current || activeRoomCodeRef.current !== activeRoomCode) return;
+        pollInFlightRef.current = true;
         try {
           const res = await fetch(
             `/api/multiplayer?action=poll&roomCode=${encodeURIComponent(
-              code
+              activeRoomCode
             )}&sessionToken=${encodeURIComponent(sessionTokenRef.current)}`,
             { cache: 'no-store' }
           );
           if (!res.ok) return;
           const data = await res.json();
+          if (activeRoomCodeRef.current !== activeRoomCode) return;
+
           if (data.ok && data.room) {
+            pollNotFoundCountRef.current = 0;
             setSocketConnected(true);
             applyIncomingRoomSnapshot(data.room as RoomStateSnapshot);
-          } else if (!data.ok && data.error) {
-            // Room was cancelled or closed
-            setActiveRoom(null);
-            if (typeof window !== 'undefined') {
-              window.sessionStorage.removeItem('classic_chess_active_room');
+            if (data.yourRole === 'w' || data.yourRole === 'b' || data.yourRole === 'spectator') {
+              setMyRole((prevRole) => {
+                if (prevRole !== data.yourRole) {
+                  if (data.yourRole === 'w' || data.yourRole === 'b') {
+                    setMpOrientation(data.yourRole);
+                  }
+                  return data.yourRole;
+                }
+                return prevRole;
+              });
+            }
+          } else if (!data.ok) {
+            if (data.errorCode === 'ROOM_CANCELLED') {
+              activeRoomCodeRef.current = null;
+              setActiveRoom(null);
+              if (typeof window !== 'undefined') {
+                window.sessionStorage.removeItem('classic_chess_active_room');
+                const url = new URL(window.location.href);
+                url.searchParams.delete('room');
+                window.history.replaceState({}, '', url.toString());
+              }
+            } else if (data.errorCode === 'ROOM_NOT_FOUND') {
+              pollNotFoundCountRef.current += 1;
+              if (pollNotFoundCountRef.current >= 6) {
+                activeRoomCodeRef.current = null;
+                setActiveRoom(null);
+                if (typeof window !== 'undefined') {
+                  window.sessionStorage.removeItem('classic_chess_active_room');
+                  const url = new URL(window.location.href);
+                  url.searchParams.delete('room');
+                  window.history.replaceState({}, '', url.toString());
+                }
+              }
             }
           }
         } catch {
           // ignore transient poll error
+        } finally {
+          pollInFlightRef.current = false;
         }
-      }, 750);
+      }, 800);
       return () => clearInterval(interval);
     }
 
@@ -462,7 +536,7 @@ export default function ClassicChessApp() {
       }, 3000);
       return () => clearInterval(lobbyInterval);
     }
-  }, [activeRoom, activeTab, applyIncomingRoomSnapshot, fetchLobbyViaHttp]);
+  }, [activeRoomCode, activeTab, applyIncomingRoomSnapshot, fetchLobbyViaHttp]);
 
   // Determine current active board state based on activeTab
   const isMultiplayerView = activeTab === 'multiplayer' && activeRoom !== null;

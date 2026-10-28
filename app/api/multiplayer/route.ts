@@ -70,6 +70,14 @@ export async function POST(req: NextRequest) {
     }
 
     const pseudoSocketId = `http_${sessionToken}`;
+    const io = (
+      globalThis as unknown as {
+        __classicChessSocketIO?: {
+          emit: (ev: string, data: unknown) => void;
+          to: (room: string) => { emit: (ev: string, data: unknown) => void };
+        };
+      }
+    ).__classicChessSocketIO;
 
     switch (action) {
       case 'room:create': {
@@ -81,9 +89,13 @@ export async function POST(req: NextRequest) {
           preferredColor: (body.preferredColor as 'w' | 'b' | 'random') || 'w',
           visibility: (body.visibility as RoomVisibility) || 'public',
         });
+        const waitingRooms = gameRoomManager.listWaitingRooms();
+        if (res.ok && res.room) {
+          io?.emit('lobby:rooms', waitingRooms);
+        }
         return NextResponse.json({
           ...res,
-          waitingRooms: gameRoomManager.listWaitingRooms(),
+          waitingRooms,
         });
       }
 
@@ -94,9 +106,14 @@ export async function POST(req: NextRequest) {
           roomCode: String(body.roomCode || ''),
           playerName: String(body.playerName || 'Pemain'),
         });
+        const waitingRooms = gameRoomManager.listWaitingRooms();
+        if (res.ok && res.room) {
+          io?.to(res.room.roomCode).emit('game:state', res.room);
+          io?.emit('lobby:rooms', waitingRooms);
+        }
         return NextResponse.json({
           ...res,
-          waitingRooms: gameRoomManager.listWaitingRooms(),
+          waitingRooms,
         });
       }
 
@@ -105,17 +122,30 @@ export async function POST(req: NextRequest) {
           roomCode: String(body.roomCode || ''),
           sessionToken,
         });
+        if (res.ok && res.room) {
+          io?.to(res.room.roomCode).emit('game:state', res.room);
+          if (res.started) {
+            io?.to(res.room.roomCode).emit('game:start', res.room);
+            io?.emit('lobby:rooms', gameRoomManager.listWaitingRooms());
+          }
+        }
         return NextResponse.json(res);
       }
 
       case 'room:cancel': {
+        const code = String(body.roomCode || '').trim().toUpperCase();
         const res = gameRoomManager.cancelWaitingRoom({
-          roomCode: String(body.roomCode || ''),
+          roomCode: code,
           sessionToken,
         });
+        const waitingRooms = gameRoomManager.listWaitingRooms();
+        if (res.ok && code) {
+          io?.to(code).emit('room:cancelled', { roomCode: code });
+          io?.emit('lobby:rooms', waitingRooms);
+        }
         return NextResponse.json({
           ...res,
-          waitingRooms: gameRoomManager.listWaitingRooms(),
+          waitingRooms,
         });
       }
 
@@ -128,6 +158,12 @@ export async function POST(req: NextRequest) {
           promotion: body.promotion as PieceSymbol | undefined,
           ply: typeof body.ply === 'number' ? body.ply : undefined,
         });
+        if (res.ok && res.room) {
+          io?.to(res.room.roomCode).emit('game:state', res.room);
+          if (res.gameFinished) {
+            io?.to(res.room.roomCode).emit('game:finished', res.room);
+          }
+        }
         return NextResponse.json(res);
       }
 
@@ -136,6 +172,9 @@ export async function POST(req: NextRequest) {
           roomCode: String(body.roomCode || ''),
           sessionToken,
         });
+        if (res.ok && res.room) {
+          io?.to(res.room.roomCode).emit('game:state', res.room);
+        }
         return NextResponse.json(res);
       }
 
@@ -145,6 +184,12 @@ export async function POST(req: NextRequest) {
           sessionToken,
           accept: Boolean(body.accept),
         });
+        if (res.ok && res.room) {
+          io?.to(res.room.roomCode).emit('game:state', res.room);
+          if (res.gameFinished) {
+            io?.to(res.room.roomCode).emit('game:finished', res.room);
+          }
+        }
         return NextResponse.json(res);
       }
 
@@ -153,6 +198,12 @@ export async function POST(req: NextRequest) {
           roomCode: String(body.roomCode || ''),
           sessionToken,
         });
+        if (res.ok && res.room) {
+          io?.to(res.room.roomCode).emit('game:state', res.room);
+          if (res.gameFinished) {
+            io?.to(res.room.roomCode).emit('game:finished', res.room);
+          }
+        }
         return NextResponse.json(res);
       }
 
@@ -161,6 +212,12 @@ export async function POST(req: NextRequest) {
           roomCode: String(body.roomCode || ''),
           sessionToken,
         });
+        if (res.ok && res.room) {
+          io?.to(res.room.roomCode).emit('game:state', res.room);
+          if (res.gameFinished) {
+            io?.to(res.room.roomCode).emit('game:finished', res.room);
+          }
+        }
         return NextResponse.json(res);
       }
 
@@ -169,6 +226,10 @@ export async function POST(req: NextRequest) {
           roomCode: String(body.roomCode || ''),
           sessionToken,
         });
+        if (res.ok && res.room) {
+          io?.to(res.room.roomCode).emit('game:state', res.room);
+          io?.to(res.room.roomCode).emit('game:start', res.room);
+        }
         return NextResponse.json(res);
       }
 
@@ -182,6 +243,10 @@ export async function POST(req: NextRequest) {
           roomCode: String(body.roomCode || ''),
           sessionToken,
         });
+        if (res.ok && res.chatItem && pollRes.room) {
+          io?.to(pollRes.room.roomCode).emit('chat:message', res.chatItem);
+          io?.to(pollRes.room.roomCode).emit('game:state', pollRes.room);
+        }
         return NextResponse.json({
           ...res,
           room: pollRes.room,

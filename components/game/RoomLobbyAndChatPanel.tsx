@@ -348,14 +348,8 @@ export default function RoomLobbyAndChatPanel({
 
   // Active Room View
   const bothSeated = Boolean(activeRoom.whitePlayer && activeRoom.blackPlayer);
-  const mySeat =
-    myRole === 'w'
-      ? activeRoom.whitePlayer
-      : myRole === 'b'
-      ? activeRoom.blackPlayer
-      : null;
-  const needsMyReady =
-    activeRoom.status === 'waiting' && bothSeated && mySeat && !mySeat.ready;
+  const canStartMatch =
+    activeRoom.status === 'waiting' && bothSeated && myRole !== 'spectator';
 
   return (
     <div className="flex flex-col gap-3 bg-[#221D19] border border-[#38251C] rounded-xl p-4">
@@ -455,25 +449,26 @@ export default function RoomLobbyAndChatPanel({
         <div className="p-3 rounded-lg bg-[#171513] border border-[#79543A] flex flex-col gap-2">
           {!bothSeated ? (
             <p className="text-xs text-[#E7D5B5]">
-              Menunggu pemain kedua bergabung ke room <strong>{activeRoom.roomCode}</strong>. Bagikan kode atau buka tautan undangan di browser kedua!
+              Menunggu pemain kedua bergabung ke room <strong>{activeRoom.roomCode}</strong>. Bagikan kode atau buka tautan undangan di perangkat teman!
             </p>
-          ) : needsMyReady ? (
-            <div className="flex items-center justify-between gap-2">
+          ) : canStartMatch ? (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <span className="text-xs font-medium text-[#F2E9DC]">
-                Kedua pemain sudah di dalam room! Klik untuk memulai:
+                Kedua pemain sudah terhubung ({activeRoom.whitePlayer?.displayName} vs{' '}
+                {activeRoom.blackPlayer?.displayName}). Siap bertanding!
               </span>
               <button
                 type="button"
                 onClick={onReadyToStart}
-                className="inline-flex items-center gap-1.5 py-2 px-4 rounded-lg text-xs font-semibold bg-[#C7A66A] text-[#171513] hover:bg-[#d4b67d] transition-colors whitespace-nowrap shrink-0"
+                className="inline-flex items-center justify-center gap-1.5 py-2 px-4 rounded-lg text-xs font-semibold bg-[#C7A66A] text-[#171513] hover:bg-[#d4b67d] transition-colors whitespace-nowrap shrink-0"
               >
                 <Play className="w-3.5 h-3.5" />
-                <span>Siap Mulai Pertandingan</span>
+                <span>Terima & Mulai Pertandingan</span>
               </button>
             </div>
           ) : (
             <p className="text-xs text-[#C7A66A]">
-              Menunggu lawan menekan tombol &ldquo;Siap Mulai Pertandingan&rdquo;...
+              Menunggu pemain memulai pertandingan...
             </p>
           )}
         </div>
