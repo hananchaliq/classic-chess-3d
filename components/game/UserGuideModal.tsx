@@ -1,134 +1,18 @@
 'use client';
 
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { ChessBrandEmblem } from './ChessBrandLogo.tsx';
 import {
-  HelpCircle,
   ChevronLeft,
   ChevronRight,
   X,
   MousePointerClick,
   Bot,
   Users,
-  MonitorSmartphone,
+  Palette,
   CheckCircle2,
 } from 'lucide-react';
-
-interface QuickGuideCardProps {
-  themeMode: 'light' | 'dark';
-  isDesktopViewport: boolean;
-  effectiveBoardMode: '2d' | '3d';
-  onOpenModal: () => void;
-}
-
-export function QuickGuideCard({
-  themeMode,
-  isDesktopViewport,
-  effectiveBoardMode,
-  onOpenModal,
-}: QuickGuideCardProps) {
-  const isLight = themeMode === 'light';
-
-  return (
-    <div
-      className={`rounded-xl border-2 p-3.5 transition-colors ${
-        isLight
-          ? 'bg-[#BEB5A9] border-[#A78D78] text-[#291C0E]'
-          : 'bg-[#6E473B] border-[#A78D78] text-[#E1D4C2]'
-      }`}
-    >
-      <div
-        className={`flex items-center justify-between gap-2 pb-2.5 mb-2.5 border-b ${
-          isLight ? 'border-[#A78D78]' : 'border-[#A78D78]'
-        }`}
-      >
-        <div className="flex items-center gap-2">
-          <span className="w-7 h-7 rounded-lg bg-[#291C0E] text-[#E1D4C2] border border-[#A78D78] flex items-center justify-center shrink-0">
-            <HelpCircle className="w-4 h-4" />
-          </span>
-          <div>
-            <h3 className="text-sm font-bold font-serif leading-tight">
-              Panduan Cepat Bermain
-            </h3>
-            <p
-              className={`text-[11px] ${
-                isLight ? 'text-[#6E473B]' : 'text-[#BEB5A9]'
-              }`}
-            >
-              Mode Aktif: Papan {effectiveBoardMode.toUpperCase()}{' '}
-              {isDesktopViewport ? '(Desktop)' : '(HP / Tablet Ringan)'}
-            </p>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={onOpenModal}
-          className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors whitespace-nowrap shrink-0 ${
-            isLight
-              ? 'bg-[#6E473B] text-[#E1D4C2] border-[#291C0E] hover:bg-[#291C0E]'
-              : 'bg-[#E1D4C2] text-[#291C0E] border-[#BEB5A9] hover:bg-[#BEB5A9]'
-          }`}
-        >
-          Panduan Interaktif
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-        <div
-          className={`p-2 rounded-lg border ${
-            isLight
-              ? 'bg-[#E1D4C2] border-[#A78D78] text-[#291C0E]'
-              : 'bg-[#291C0E] border-[#A78D78] text-[#E1D4C2]'
-          }`}
-        >
-          <span className="font-bold block mb-0.5">1. Gerakkan Bidak</span>
-          <span className={isLight ? 'text-[#6E473B]' : 'text-[#BEB5A9]'}>
-            Ketuk bidak untuk melihat titik langkah legal, lalu ketuk petak tujuan.
-          </span>
-        </div>
-
-        <div
-          className={`p-2 rounded-lg border ${
-            isLight
-              ? 'bg-[#E1D4C2] border-[#A78D78] text-[#291C0E]'
-              : 'bg-[#291C0E] border-[#A78D78] text-[#E1D4C2]'
-          }`}
-        >
-          <span className="font-bold block mb-0.5">2. Bot AI & Hint</span>
-          <span className={isLight ? 'text-[#6E473B]' : 'text-[#BEB5A9]'}>
-            Pilih level Pemula–GM atau tekan tombol Hint saat butuh saran langkah.
-          </span>
-        </div>
-
-        <div
-          className={`p-2 rounded-lg border ${
-            isLight
-              ? 'bg-[#E1D4C2] border-[#A78D78] text-[#291C0E]'
-              : 'bg-[#291C0E] border-[#A78D78] text-[#E1D4C2]'
-          }`}
-        >
-          <span className="font-bold block mb-0.5">3. Room Multiplayer</span>
-          <span className={isLight ? 'text-[#6E473B]' : 'text-[#BEB5A9]'}>
-            Buat Room Online & bagikan kode 6 huruf ke teman untuk main bersama.
-          </span>
-        </div>
-
-        <div
-          className={`p-2 rounded-lg border ${
-            isLight
-              ? 'bg-[#E1D4C2] border-[#A78D78] text-[#291C0E]'
-              : 'bg-[#291C0E] border-[#A78D78] text-[#E1D4C2]'
-          }`}
-        >
-          <span className="font-bold block mb-0.5">4. Visual 2D/3D & Tema</span>
-          <span className={isLight ? 'text-[#6E473B]' : 'text-[#BEB5A9]'}>
-            Otomatis 2D cepat di HP/Tablet. Di Desktop tersedia tombol 2D/3D.
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 interface UserGuideModalProps {
   isOpen: boolean;
@@ -142,48 +26,56 @@ interface UserGuideModalProps {
 
 const GUIDE_STEPS = [
   {
-    title: 'Langkah 1: Cara Menggerakkan Bidak & Aturan Catur',
-    subtitle: 'Kendali papan yang mudah di layar sentuh maupun mouse',
+    id: 'moves',
+    tabLabel: '1. Gerak & FIDE',
+    title: 'Cara Melangkah & Aturan FIDE',
+    subtitle: 'Kendali papan catur ala Chess.com yang presisi di semua layar',
     icon: MousePointerClick,
     points: [
-      'Ketuk atau klik bidak milik Anda (Putih berjalan lebih dulu). Petak yang bisa dituju akan ditandai dengan titik bulat.',
-      'Ketuk petak bertitik tersebut untuk memindahkan bidak, atau tarik (drag & drop) bidak langsung ke petak tujuan.',
-      'Semua aturan resmi FIDE didukung penuh: Rokade (O-O / O-O-O), En Passant, Promosi Pion otomatis, Skak, dan Klaim Remis.',
+      'Klik atau tarik bidak milik Anda. Petak kosong yang sah ditandai titik lingkaran, sedangkan bidak lawan yang bisa dimakan ditandai cincin sudut.',
+      'Klik kanan pada petak mana saja untuk memberi tanda warna taktis.',
+      'Mendukung penuh aturan resmi FIDE: Rokade (O-O & O-O-O), En Passant, Promosi Pion, dan Klaim Remis.',
     ],
-    tip: 'Gunakan tombol "Putar Papan" di atas papan jika ingin membalik sudut pandang Putih/Hitam.',
+    tip: 'Gunakan tombol "Putar" di bawah papan untuk membalik orientasi Putih atau Hitam.',
   },
   {
-    title: 'Langkah 2: Bermain Lawan Bot AI & Bantuan Hint',
-    subtitle: 'Latihan santai hingga tingkat Grandmaster',
+    id: 'themes',
+    tabLabel: '2. Tema & Bidak',
+    title: '12 Tema Papan 2D & 8 Tema Bidak',
+    subtitle: 'Diatur praktis lewat 1 tombol sederhana di bawah papan',
+    icon: Palette,
+    points: [
+      'Klik 1 tombol "Tema" di bawah papan 2D untuk memilih 12 tema papan (Rennale Forest, Archiova Bronze, Vellure Sage, Nextgenix Tech, Chess.com Green, dll.).',
+      'Bidak catur 2D memiliki 8 tema warna & siluet tersendiri (Rennale Jade, Archiova Bronze, Vellure Organic, Nextgenix Cyber, Imperial Gold, dll.).',
+      'Khusus pengguna Komputer/Desktop (>= 1024px), tersedia mode 3D dengan kontrol kamera minimalis.',
+    ],
+    tip: 'Gunakan tombol "Ganti Cepat" di dalam menu Tema untuk mencoba kombinasi papan & bidak secara instan.',
+  },
+  {
+    id: 'bot',
+    tabLabel: '3. Bot AI & Hint',
+    title: 'Lawan Bot AI & Panah Saran (Hint)',
+    subtitle: 'Latihan taktis dari level Pemula hingga Grandmaster',
     icon: Bot,
     points: [
-      'Buka tab "Lawan Bot AI" untuk bermain langsung tanpa perlu menunggu lawan online.',
-      'Tersedia 5 tingkat kesulitan: Pemula, Kasual, Taktis, Master, hingga Grandmaster (GM).',
-      'Bingung menentukan langkah? Tekan tombol "Hint" untuk melihat saran langkah terbaik beserta penjelasan taktisnya, atau tekan "Undo Langkah" untuk menarik kembali langkah.',
+      'Pilih 1 dari 5 tingkat kesulitan AI (Pemula ~600 ELO hingga Grandmaster ~2100 ELO) langsung dari panel kanan.',
+      'Tekan tombol "Hint" saat giliran Anda untuk memunculkan panah saran langkah terbaik langsung di atas papan.',
+      'Bar evaluasi vertikal di sisi kiri papan menampilkan keunggulan posisi Putih dan Hitam secara real-time.',
     ],
-    tip: 'Bar evaluasi di samping papan menunjukkan siapa yang sedang unggul posisi secara real-time.',
+    tip: 'Gunakan tombol "Undo Langkah" untuk mempelajari ulang variasi langkah.',
   },
   {
-    title: 'Langkah 3: Mabar Online di Room Multiplayer',
-    subtitle: 'Bermain real-time bersama teman lewat kode 6 karakter',
+    id: 'multiplayer',
+    tabLabel: '4. Multiplayer',
+    title: 'Bermain Bersama Teman (Room Online)',
+    subtitle: 'Sinkronisasi real-time dengan kode undangan 6 huruf',
     icon: Users,
     points: [
-      'Pilih tab "Room Online", tentukan nama pemain dan durasi waktu (misal 5+0 Blitz atau 10+0 Rapid), lalu tekan "Buat Room".',
-      'Salin Kode Room (6 karakter) atau Tautan Undangan dan kirimkan ke teman Anda.',
-      'Setelah teman bergabung ke dalam room, tekan tombol "Terima & Mulai Pertandingan" untuk memulai jam catur.',
+      'Pilih mode "Multiplayer" di bar atas, tentukan durasi jam catur (Bullet, Blitz, Rapid, atau Santai), lalu klik "Buat Room".',
+      'Salin kode 6 huruf atau tautan undangan dan kirimkan ke teman Anda.',
+      'Begitu kedua pemain bergabung, klik "Mulai" untuk menjalankan jam catur dan obrolan.',
     ],
-    tip: 'Koneksi room dilengkapi sinkronisasi otomatis sehingga permainan tetap berjalan stabil di semua perangkat.',
-  },
-  {
-    title: 'Langkah 4: Mode 2D/3D & Tema Warna Hangat',
-    subtitle: 'Ringan di HP/Tablet dan fleksibel di Desktop',
-    icon: MonitorSmartphone,
-    points: [
-      'Di HP dan Tablet, aplikasi otomatis menggunakan Papan 2D Klasik yang sangat ringan, hemat baterai, dan bebas lag.',
-      'Di komputer Desktop, Papan 3D aktif secara bawaan dan Anda dapat beralih ke Papan 2D kapan saja lewat tombol "Mode 2D / 3D" di bagian atas.',
-      'Anda juga dapat mengganti suasana antara Tema Terang Hangat (#E1D4C2) dan Tema Gelap Hangat (#291C0E) sesuai kenyamanan mata.',
-    ],
-    tip: 'Coba tombol pengatur tema dan mode papan di bawah ini sebelum mulai bermain!',
+    tip: 'Koneksi room dilengkapi penyimpanan sesi otomatis jika halaman tidak sengaja ter-refresh.',
   },
 ];
 
@@ -197,214 +89,227 @@ export default function UserGuideModal({
   onToggleDesktopBoardMode,
 }: UserGuideModalProps) {
   const [stepIndex, setStepIndex] = useState(0);
-
-  if (!isOpen) return null;
-
   const isLight = themeMode === 'light';
   const currentStep = GUIDE_STEPS[stepIndex];
   const StepIcon = currentStep.icon;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#291C0E]/80 p-4">
-      <div
-        className={`w-full max-w-lg rounded-2xl border-2 p-5 sm:p-6 shadow-2xl transition-colors ${
-          isLight
-            ? 'bg-[#E1D4C2] border-[#6E473B] text-[#291C0E]'
-            : 'bg-[#291C0E] border-[#A78D78] text-[#E1D4C2]'
-        }`}
-      >
-        {/* Modal Header */}
-        <div
-          className={`flex items-center justify-between gap-3 pb-3.5 mb-4 border-b-2 ${
-            isLight ? 'border-[#BEB5A9]' : 'border-[#6E473B]'
-          }`}
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.18 }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#060E0A]/75 backdrop-blur-xs p-3 sm:p-4"
+          onClick={onClose}
         >
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-[#6E473B] text-[#E1D4C2] border border-[#A78D78] flex items-center justify-center shrink-0">
-              <StepIcon className="w-5 h-5" />
-            </div>
-            <div>
-              <span
-                className={`text-[11px] font-mono uppercase tracking-wider font-bold ${
-                  isLight ? 'text-[#6E473B]' : 'text-[#BEB5A9]'
-                }`}
-              >
-                Panduan Pengguna · Langkah {stepIndex + 1} dari {GUIDE_STEPS.length}
-              </span>
-              <h2 className="text-base sm:text-lg font-bold font-serif leading-snug">
-                {currentStep.title}
-              </h2>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className={`p-1.5 rounded-lg border transition-colors shrink-0 ${
+          <motion.div
+            initial={{ opacity: 0, scale: 0.94, y: 12 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+            transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-md rounded-2xl border p-4 sm:p-5 transition-colors ${
               isLight
-                ? 'bg-[#BEB5A9] text-[#291C0E] border-[#A78D78] hover:bg-[#6E473B] hover:text-[#E1D4C2]'
-                : 'bg-[#6E473B] text-[#E1D4C2] border-[#A78D78] hover:bg-[#A78D78] hover:text-[#291C0E]'
-            }`}
-            aria-label="Tutup panduan"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Step Progress Indicator Pills (Solid 5-color palette) */}
-        <div className="grid grid-cols-4 gap-2 mb-4">
-          {GUIDE_STEPS.map((s, idx) => {
-            const active = idx === stepIndex;
-            const completed = idx < stepIndex;
-            return (
-              <button
-                key={s.title}
-                type="button"
-                onClick={() => setStepIndex(idx)}
-                className={`h-2.5 rounded-full border transition-colors ${
-                  active
-                    ? 'bg-[#6E473B] border-[#291C0E]'
-                    : completed
-                    ? 'bg-[#A78D78] border-[#6E473B]'
-                    : isLight
-                    ? 'bg-[#BEB5A9] border-[#A78D78]'
-                    : 'bg-[#6E473B]/40 border-[#A78D78]'
-                }`}
-                aria-label={`Ke langkah ${idx + 1}`}
-              />
-            );
-          })}
-        </div>
-
-        <p
-          className={`text-xs font-medium mb-3 ${
-            isLight ? 'text-[#6E473B]' : 'text-[#BEB5A9]'
-          }`}
-        >
-          {currentStep.subtitle}
-        </p>
-
-        {/* Bullet Points Box */}
-        <div
-          className={`rounded-xl border-2 p-4 space-y-2.5 mb-4 ${
-            isLight
-              ? 'bg-[#BEB5A9] border-[#A78D78] text-[#291C0E]'
-              : 'bg-[#6E473B] border-[#A78D78] text-[#E1D4C2]'
-          }`}
-        >
-          {currentStep.points.map((pt, i) => (
-            <div key={i} className="flex items-start gap-2.5 text-xs sm:text-sm leading-relaxed">
-              <CheckCircle2
-                className={`w-4 h-4 shrink-0 mt-0.5 ${
-                  isLight ? 'text-[#291C0E]' : 'text-[#E1D4C2]'
-                }`}
-              />
-              <span>{pt}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Interactive Quick Toggles on Step 4 */}
-        {stepIndex === 3 && (
-          <div
-            className={`rounded-xl border p-3 mb-4 flex flex-wrap items-center justify-between gap-2 ${
-              isLight
-                ? 'bg-[#A78D78] border-[#6E473B] text-[#291C0E]'
-                : 'bg-[#A78D78] border-[#E1D4C2] text-[#291C0E]'
+                ? 'bg-[#F4F1EA] border-[#C5BFB3] text-[#12231B] shadow-2xl'
+                : 'bg-[#102018] border-[#7A9A76]/45 text-[#F3ECE0] shadow-[0_24px_60px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(223,194,155,0.16)]'
             }`}
           >
-            <span className="text-xs font-bold">Coba Pengaturan Sekarang:</span>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={onToggleTheme}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#291C0E] text-[#E1D4C2] border border-[#E1D4C2] hover:bg-[#6E473B] transition-colors"
-              >
-                Ganti ke Tema {isLight ? 'Gelap Hangat' : 'Terang Hangat'}
-              </button>
+            {/* Compact Header */}
+            <div className="flex items-center justify-between gap-2 pb-3 mb-3 border-b border-[#7A9A76]/25">
+              <div className="flex items-center gap-2.5">
+                <ChessBrandEmblem
+                  size="sm"
+                  variant={isLight ? 'forest' : 'sand'}
+                />
+                <div>
+                  <div
+                    className={`text-[11px] font-medium flex items-center gap-1 ${
+                      isLight ? 'text-[#3F543E]' : 'text-[#DFC29B]'
+                    }`}
+                  >
+                    <StepIcon className="w-3 h-3" />
+                    <span>Panduan Ringkas · {stepIndex + 1}/{GUIDE_STEPS.length}</span>
+                  </div>
+                  <h2 className="text-base font-bold font-serif leading-tight">
+                    {currentStep.title}
+                  </h2>
+                </div>
+              </div>
 
-              {isDesktopViewport && onToggleDesktopBoardMode && (
-                <button
-                  type="button"
-                  onClick={onToggleDesktopBoardMode}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#E1D4C2] text-[#291C0E] border border-[#291C0E] hover:bg-[#BEB5A9] transition-colors"
-                >
-                  Ganti ke Papan {effectiveBoardMode === '3d' ? '2D' : '3D'}
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Tip Box */}
-        <div
-          className={`rounded-lg border px-3.5 py-2.5 text-xs mb-5 ${
-            isLight
-              ? 'bg-[#A78D78] border-[#6E473B] text-[#291C0E]'
-              : 'bg-[#291C0E] border-[#6E473B] text-[#BEB5A9]'
-          }`}
-        >
-          <strong className={isLight ? 'text-[#291C0E]' : 'text-[#E1D4C2]'}>Tips: </strong>
-          {currentStep.tip}
-        </div>
-
-        {/* Palette Swatch Preview Footer & Step Navigation */}
-        <div className="flex items-center justify-between gap-3 pt-3 border-t border-[#A78D78]">
-          {/* 5-color palette indicator */}
-          <div className="flex items-center gap-1" title="Palet 5 Warna Hangat Aktif">
-            <span className="w-4 h-4 rounded-full bg-[#291C0E] border border-[#E1D4C2]" />
-            <span className="w-4 h-4 rounded-full bg-[#6E473B] border border-[#E1D4C2]" />
-            <span className="w-4 h-4 rounded-full bg-[#A78D78] border border-[#291C0E]" />
-            <span className="w-4 h-4 rounded-full bg-[#BEB5A9] border border-[#291C0E]" />
-            <span className="w-4 h-4 rounded-full bg-[#E1D4C2] border border-[#291C0E]" />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={stepIndex === 0}
-              onClick={() => setStepIndex((prev) => Math.max(0, prev - 1))}
-              className={`inline-flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-semibold border disabled:opacity-40 transition-colors ${
-                isLight
-                  ? 'bg-[#BEB5A9] text-[#291C0E] border-[#6E473B] hover:bg-[#A78D78]'
-                  : 'bg-[#6E473B] text-[#E1D4C2] border-[#A78D78] hover:bg-[#A78D78] hover:text-[#291C0E]'
-              }`}
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-              <span>Sebelumnya</span>
-            </button>
-
-            {stepIndex < GUIDE_STEPS.length - 1 ? (
-              <button
-                type="button"
-                onClick={() =>
-                  setStepIndex((prev) => Math.min(GUIDE_STEPS.length - 1, prev + 1))
-                }
-                className={`inline-flex items-center gap-1 px-3.5 py-2 rounded-lg text-xs font-semibold border transition-colors ${
-                  isLight
-                    ? 'bg-[#291C0E] text-[#E1D4C2] border-[#6E473B] hover:bg-[#6E473B]'
-                    : 'bg-[#E1D4C2] text-[#291C0E] border-[#BEB5A9] hover:bg-[#BEB5A9]'
-                }`}
-              >
-                <span>Selanjutnya</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            ) : (
               <button
                 type="button"
                 onClick={onClose}
-                className={`inline-flex items-center gap-1 px-4 py-2 rounded-lg text-xs font-bold border transition-colors ${
+                className={`p-1.5 rounded-full border transition-colors shrink-0 ${
                   isLight
-                    ? 'bg-[#6E473B] text-[#E1D4C2] border-[#291C0E] hover:bg-[#291C0E]'
-                    : 'bg-[#E1D4C2] text-[#291C0E] border-[#BEB5A9] hover:bg-[#BEB5A9]'
+                    ? 'bg-[#E2DDD3] text-[#12231B] border-[#C5BFB3] hover:bg-[#14261D] hover:text-[#EFE6D5]'
+                    : 'bg-[#0A140F] text-[#F3ECE0] border-[#7A9A76]/40 hover:border-[#DFC29B]'
+                }`}
+                aria-label="Tutup panduan"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Compact 4-Tab Pill Switcher */}
+            <div
+              className={`grid grid-cols-4 gap-1 p-1 rounded-full mb-3 border ${
+                isLight
+                  ? 'bg-[#E2DDD3]/80 border-[#C5BFB3]'
+                  : 'bg-[#0A140F] border-[#7A9A76]/30'
+              }`}
+            >
+              {GUIDE_STEPS.map((s, idx) => {
+                const active = idx === stepIndex;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setStepIndex(idx)}
+                    className={`relative py-1.5 px-1.5 rounded-full text-[11px] font-semibold transition-colors whitespace-nowrap truncate ${
+                      active
+                        ? isLight
+                          ? 'bg-[#14261D] text-[#EFE6D5] font-bold'
+                          : 'bg-[#DFC29B] text-[#0E1B14] font-bold'
+                        : isLight
+                        ? 'text-[#4A5D49] hover:text-[#12231B]'
+                        : 'text-[#9BB09D] hover:text-[#F3ECE0]'
+                    }`}
+                  >
+                    {s.tabLabel}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Animated Step Content */}
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={currentStep.id}
+                initial={{ opacity: 0, x: 8 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <p
+                  className={`text-xs mb-2.5 ${
+                    isLight ? 'text-[#4A5D49]' : 'text-[#9BB09D]'
+                  }`}
+                >
+                  {currentStep.subtitle}
+                </p>
+
+                <div
+                  className={`rounded-xl border p-3 space-y-2 mb-3 ${
+                    isLight
+                      ? 'bg-[#EAE6DF] border-[#C5BFB3] text-[#12231B]'
+                      : 'bg-[#0A140F] border-[#7A9A76]/30 text-[#F3ECE0] shadow-[inset_0_2px_6px_rgba(0,0,0,0.5)]'
+                  }`}
+                >
+                  {currentStep.points.map((pt, i) => (
+                    <div key={i} className="flex items-start gap-2 text-xs leading-relaxed">
+                      <CheckCircle2
+                        className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${
+                          isLight ? 'text-[#1F4031]' : 'text-[#DFC29B]'
+                        }`}
+                      />
+                      <span>{pt}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Quick Live Action Toggles */}
+                {stepIndex === 1 && (
+                  <div
+                    className={`rounded-xl p-2.5 mb-3 flex flex-wrap items-center justify-between gap-2 border ${
+                      isLight
+                        ? 'bg-[#E2DDD3] border-[#C5BFB3]'
+                        : 'bg-[#152A20] border-[#DFC29B]/40'
+                    }`}
+                  >
+                    <span className="text-[11px] font-semibold">Uji Cepat:</span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={onToggleTheme}
+                        className="px-3 py-1 rounded-full text-[11px] font-bold bg-[#DFC29B] text-[#0E1B14] hover:bg-[#EAD3B3] transition-colors"
+                      >
+                        Suasana {isLight ? 'Gelap' : 'Terang'}
+                      </button>
+
+                      {isDesktopViewport && onToggleDesktopBoardMode && (
+                        <button
+                          type="button"
+                          onClick={onToggleDesktopBoardMode}
+                          className="px-3 py-1 rounded-full text-[11px] font-bold bg-[#4E392B] text-[#EFE6D5] hover:bg-[#694D3A] transition-colors"
+                        >
+                          Mode {effectiveBoardMode === '3d' ? '2D' : '3D'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div
+                  className={`rounded-xl px-3 py-2 text-[11px] mb-3.5 ${
+                    isLight
+                      ? 'bg-[#E2DDD3] text-[#12231B]'
+                      : 'bg-[#152A20]/80 text-[#9BB09D] border border-[#7A9A76]/30'
+                  }`}
+                >
+                  <strong className={isLight ? 'text-[#1F4031]' : 'text-[#DFC29B]'}>
+                    Tips:{' '}
+                  </strong>
+                  {currentStep.tip}
+                </div>
+              </motion.div>
+            </AnimatePresence>
+
+            {/* Footer Controls */}
+            <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-[#7A9A76]/25">
+              <button
+                type="button"
+                disabled={stepIndex === 0}
+                onClick={() => setStepIndex((prev) => Math.max(0, prev - 1))}
+                className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border disabled:opacity-35 transition-colors ${
+                  isLight
+                    ? 'bg-[#E2DDD3] text-[#12231B] border-[#C5BFB3] hover:bg-[#D5CFC3]'
+                    : 'bg-[#0A140F] text-[#F3ECE0] border-[#7A9A76]/40 hover:border-[#DFC29B]'
                 }`}
               >
-                <span>Mulai Bermain</span>
+                <ChevronLeft className="w-3.5 h-3.5" />
+                <span>Sebelumnya</span>
               </button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+
+              {stepIndex < GUIDE_STEPS.length - 1 ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setStepIndex((prev) => Math.min(GUIDE_STEPS.length - 1, prev + 1))
+                  }
+                  className={`inline-flex items-center gap-1 px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors ${
+                    isLight
+                      ? 'bg-[#14261D] text-[#EFE6D5] hover:bg-[#1F3A2C]'
+                      : 'bg-[#DFC29B] text-[#0E1B14] hover:bg-[#EAD3B3]'
+                  }`}
+                >
+                  <span>Selanjutnya</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="inline-flex items-center gap-1 px-4 py-1.5 rounded-full text-xs font-bold bg-[#DFC29B] text-[#0E1B14] hover:bg-[#EAD3B3] transition-colors"
+                >
+                  <span>Mulai Bermain</span>
+                </button>
+              )}
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

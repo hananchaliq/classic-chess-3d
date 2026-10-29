@@ -32,25 +32,25 @@ export default function PromotionModal({
   const isLight = themeMode === 'light';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#291C0E]/80 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#09130E]/80 backdrop-blur-[2px] p-4">
       <div
-        className={`w-full max-w-md rounded-xl border-2 p-6 shadow-2xl ${
+        className={`w-full max-w-md rounded-3xl border p-6 shadow-2xl ${
           isLight
-            ? 'bg-[#E1D4C2] border-[#6E473B] text-[#291C0E]'
-            : 'bg-[#291C0E] border-[#A78D78] text-[#E1D4C2]'
+            ? 'bg-[#F4F1EA] border-[#C5BFB3] text-[#12231B]'
+            : 'bg-[#102018] border-[#7A9A76]/45 text-[#F3ECE0]'
         }`}
       >
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-3">
           <h3 className="text-xl font-bold font-serif">
             Promosi Pion ({color === 'w' ? 'Putih' : 'Hitam'})
           </h3>
           <button
             type="button"
             onClick={onCancel}
-            className={`px-3 py-1 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
+            className={`px-3.5 py-1 text-xs font-semibold rounded-full border transition-colors whitespace-nowrap shrink-0 ${
               isLight
-                ? 'bg-[#BEB5A9] text-[#291C0E] border-[#6E473B] hover:bg-[#6E473B] hover:text-[#E1D4C2]'
-                : 'bg-[#6E473B] text-[#E1D4C2] border-[#A78D78] hover:bg-[#A78D78] hover:text-[#291C0E]'
+                ? 'bg-[#E2DDD3] text-[#12231B] border-[#C5BFB3] hover:bg-[#14261D] hover:text-[#EFE6D5]'
+                : 'bg-[#0A140F] text-[#EFE6D5] border-[#7A9A76]/40 hover:bg-[#DFC29B] hover:text-[#0E1B14]'
             }`}
           >
             Batal
@@ -58,11 +58,11 @@ export default function PromotionModal({
         </div>
 
         <p
-          className={`text-sm mb-5 ${
-            isLight ? 'text-[#6E473B]' : 'text-[#BEB5A9]'
+          className={`text-xs sm:text-sm mb-5 ${
+            isLight ? 'text-[#4A5D49]' : 'text-[#9BB09D]'
           }`}
         >
-          Pilih bidak pengganti untuk pion yang mencapai baris terakhir:
+          Pilih perwira pengganti untuk pion yang mencapai baris akhir:
         </p>
 
         <div className="grid grid-cols-2 gap-3">
@@ -71,19 +71,19 @@ export default function PromotionModal({
               key={item.type}
               type="button"
               onClick={() => onSelect(item.type)}
-              className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all group ${
+              className={`flex flex-col items-center justify-center p-4 rounded-2xl border transition-all group ${
                 isLight
-                  ? 'bg-[#BEB5A9] border-[#A78D78] text-[#291C0E] hover:bg-[#6E473B] hover:text-[#E1D4C2] hover:border-[#291C0E]'
-                  : 'bg-[#6E473B] border-[#A78D78] text-[#E1D4C2] hover:bg-[#A78D78] hover:text-[#291C0E] hover:border-[#E1D4C2]'
+                  ? 'bg-[#EAE6DF] border-[#C5BFB3] text-[#12231B] hover:bg-[#14261D] hover:text-[#EFE6D5] hover:border-[#14261D]'
+                  : 'bg-[#0A140F] border-[#7A9A76]/35 text-[#F3ECE0] hover:bg-[#DFC29B] hover:text-[#0E1B14] hover:border-[#DFC29B]'
               }`}
             >
               <span className="text-4xl mb-2 group-hover:scale-110 transition-transform">
                 {color === 'w' ? item.whiteIcon : item.blackIcon}
               </span>
-              <span className="text-sm font-bold whitespace-nowrap">
+              <span className="text-sm font-serif font-bold whitespace-nowrap">
                 {item.name}
               </span>
-              <span className="text-xs opacity-85 mt-0.5 whitespace-nowrap">
+              <span className="text-[11px] opacity-80 mt-0.5 whitespace-nowrap">
                 {item.desc}
               </span>
             </button>

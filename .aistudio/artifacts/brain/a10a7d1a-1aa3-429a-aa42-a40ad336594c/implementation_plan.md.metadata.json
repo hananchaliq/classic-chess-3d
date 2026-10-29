@@ -1,6 +1,6 @@
 {
-  "summary":  "Rencana implementasi optimasi performa PageSpeed & Mobile (pemisahan otomatis Papan Catur 2D ringan untuk Mobile/Tablet dan 3D dinamis untuk Desktop dengan tombol beralih 2D/3D), penyederhanaan tata letak responsif, sistem Tema Terang & Gelap Hangat menggunakan kelima warna palet (#291C0E, #6E473B, #A78D78, #BEB5A9, #E1D4C2) secara solid tanpa gradasi, serta Panel Panduan Ringkas dan Pop-up Panduan Interaktif.",
-  "updatedAt":  "2026-10-29T08:04:12.424774361Z",
+  "summary":  "Rencana perombakan layout Arena Fokus ala Chess.com, animasi pergerakan bidak & antarmuka dengan Motion, pendalaman dimensi Tema Gelap (Rich Obsidian Espresso), panduan ringkas di bar atas, dan responsivitas fleksibel di semua perangkat (2D di HP/Tablet, 3D khusus Desktop).",
+  "updatedAt":  "2026-10-29T09:10:02.010681911Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

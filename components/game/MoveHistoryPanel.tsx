@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useRef, useEffect, useState } from 'react';
+import { motion } from 'motion/react';
 import type { MoveRecord, PieceColor } from '../../types/chess.ts';
 import {
   Copy,
@@ -31,6 +32,7 @@ interface MoveHistoryPanelProps {
   onRespondDraw?: (accept: boolean) => void;
   onResign?: () => void;
   themeMode?: 'light' | 'dark';
+  embedded?: boolean;
 }
 
 export default function MoveHistoryPanel({
@@ -51,12 +53,12 @@ export default function MoveHistoryPanel({
   onRespondDraw,
   onResign,
   themeMode = 'dark',
+  embedded = false,
 }: MoveHistoryPanelProps) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [copiedType, setCopiedType] = useState<'fen' | 'pgn' | null>(null);
   const [confirmResign, setConfirmResign] = useState(false);
 
-  // Group moves into pairs (White & Black per full move number)
   const moveRows: Array<{
     moveNumber: number;
     white?: MoveRecord;
@@ -95,24 +97,28 @@ export default function MoveHistoryPanel({
 
   return (
     <div
-      className={`flex flex-col h-full rounded-xl border-2 p-4 transition-colors ${
-        isLight
-          ? 'bg-[#BEB5A9] border-[#A78D78] text-[#291C0E]'
-          : 'bg-[#6E473B] border-[#A78D78] text-[#E1D4C2]'
+      className={`flex flex-col h-full transition-colors ${
+        embedded
+          ? ''
+          : `rounded-2xl border p-4 ${
+              isLight
+                ? 'bg-[#F4F1EA] border-[#C5BFB3] text-[#12231B]'
+                : 'bg-[#102018] border-[#7A9A76]/35 text-[#F3ECE0] shadow-[0_14px_34px_-8px_rgba(0,0,0,0.65),inset_0_1px_0_0_rgba(223,194,155,0.12)]'
+            }`
       }`}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between pb-3 mb-3 border-b border-[#A78D78]">
+      {/* Header Row */}
+      <div className="flex items-center justify-between gap-2 mb-2.5">
         <div>
-          <h3 className="text-sm sm:text-base font-bold font-serif">
-            Notasi & Riwayat Langkah
+          <h3 className="text-sm font-bold font-serif tracking-tight">
+            Notasi Langkah FIDE
           </h3>
           <p
-            className={`text-xs font-mono tabular-nums ${
-              isLight ? 'text-[#6E473B]' : 'text-[#BEB5A9]'
+            className={`text-[11px] font-mono tabular-nums ${
+              isLight ? 'text-[#4A5D49]' : 'text-[#9BB09D]'
             }`}
           >
-            Total {moves.length} ply ({moveRows.length} langkah penuh)
+            {moves.length} ply · {moveRows.length} langkah penuh
           </p>
         </div>
 
@@ -120,44 +126,48 @@ export default function MoveHistoryPanel({
           <button
             type="button"
             onClick={() => handleCopy('fen', fen)}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors whitespace-nowrap shrink-0 ${
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors whitespace-nowrap shrink-0 ${
               isLight
-                ? 'bg-[#E1D4C2] text-[#291C0E] border-[#6E473B] hover:bg-[#6E473B] hover:text-[#E1D4C2]'
-                : 'bg-[#291C0E] text-[#E1D4C2] border-[#A78D78] hover:bg-[#A78D78] hover:text-[#291C0E]'
+                ? 'bg-[#E2DDD3] text-[#12231B] border-[#C5BFB3] hover:bg-[#14261D] hover:text-[#EFE6D5]'
+                : 'bg-[#0A140F] text-[#EFE6D5] border-[#7A9A76]/40 hover:border-[#DFC29B] hover:text-[#DFC29B]'
             }`}
-            title="Salin string posisi FEN"
+            title="Salin posisi FEN"
           >
             {copiedType === 'fen' ? (
-              <Check className="w-3.5 h-3.5" />
+              <Check className="w-3 h-3 text-[#7A9A76]" />
             ) : (
-              <Copy className="w-3.5 h-3.5" />
+              <Copy className="w-3 h-3" />
             )}
-            <span>{copiedType === 'fen' ? 'FEN Disalin' : 'FEN'}</span>
+            <span>{copiedType === 'fen' ? 'Disalin' : 'FEN'}</span>
           </button>
 
           <button
             type="button"
             onClick={() => handleCopy('pgn', pgn || 'Belum ada langkah')}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors whitespace-nowrap shrink-0 ${
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors whitespace-nowrap shrink-0 ${
               isLight
-                ? 'bg-[#E1D4C2] text-[#291C0E] border-[#6E473B] hover:bg-[#6E473B] hover:text-[#E1D4C2]'
-                : 'bg-[#291C0E] text-[#E1D4C2] border-[#A78D78] hover:bg-[#A78D78] hover:text-[#291C0E]'
+                ? 'bg-[#E2DDD3] text-[#12231B] border-[#C5BFB3] hover:bg-[#14261D] hover:text-[#EFE6D5]'
+                : 'bg-[#0A140F] text-[#EFE6D5] border-[#7A9A76]/40 hover:border-[#DFC29B] hover:text-[#DFC29B]'
             }`}
-            title="Salin notasi PGN pertandingan"
+            title="Salin notasi PGN"
           >
             {copiedType === 'pgn' ? (
-              <Check className="w-3.5 h-3.5" />
+              <Check className="w-3 h-3 text-[#7A9A76]" />
             ) : (
-              <FileText className="w-3.5 h-3.5" />
+              <FileText className="w-3 h-3" />
             )}
-            <span>{copiedType === 'pgn' ? 'PGN Disalin' : 'PGN'}</span>
+            <span>{copiedType === 'pgn' ? 'Disalin' : 'PGN'}</span>
           </button>
         </div>
       </div>
 
       {/* Draw Offer Banner if opponent offered draw */}
       {isGameActive && opponentOfferedDraw && onRespondDraw && (
-        <div className="mb-3 p-3 rounded-lg bg-[#A78D78] text-[#291C0E] border-2 border-[#291C0E] flex flex-col gap-2">
+        <motion.div
+          initial={{ opacity: 0, y: -6 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-2.5 p-3 rounded-xl bg-[#1A3326] text-[#F3ECE0] flex flex-col gap-2 border border-[#DFC29B]/45"
+        >
           <p className="text-xs font-bold">
             Lawan menawarkan remis (Draw). Terima tawaran ini?
           </p>
@@ -165,142 +175,170 @@ export default function MoveHistoryPanel({
             <button
               type="button"
               onClick={() => onRespondDraw(true)}
-              className="flex-1 py-1.5 px-3 rounded-lg text-xs font-bold bg-[#291C0E] text-[#E1D4C2] hover:bg-[#6E473B] transition-colors whitespace-nowrap"
+              className="flex-1 py-1.5 px-3 rounded-full text-xs font-bold bg-[#DFC29B] text-[#0E1B14] hover:bg-[#EAD3B3] transition-colors whitespace-nowrap"
             >
               Terima Remis
             </button>
             <button
               type="button"
               onClick={() => onRespondDraw(false)}
-              className="flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold bg-[#E1D4C2] text-[#291C0E] border border-[#291C0E] hover:bg-[#BEB5A9] transition-colors whitespace-nowrap"
+              className="flex-1 py-1.5 px-3 rounded-full text-xs font-semibold bg-[#0A140F] text-[#EFE6D5] border border-[#7A9A76]/35 hover:bg-[#14261D] transition-colors whitespace-nowrap"
             >
               Tolak
             </button>
           </div>
-        </div>
+        </motion.div>
       )}
 
-      {/* Claimable Draw Banner (Threefold Repetition or 50-Move Rule) */}
+      {/* Claimable Draw Banner */}
       {isGameActive && canClaimDraw && onClaimDraw && myColor !== 'spectator' && (
-        <div className="mb-3 p-3 rounded-lg bg-[#A78D78] text-[#291C0E] border-2 border-[#291C0E] flex items-center justify-between gap-2">
+        <motion.div
+          initial={{ opacity: 0, y: -6 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-2.5 p-2.5 rounded-xl bg-[#1A3326] text-[#EFE6D5] border border-[#DFC29B]/40 flex items-center justify-between gap-2"
+        >
           <div className="text-xs">
-            <span className="font-bold">Syarat Klaim Remis Terpenuhi:</span>{' '}
-            {claimDrawReason || 'Pengulangan posisi 3x / Aturan 50 langkah'}
+            <span className="font-bold text-[#DFC29B]">Klaim Remis:</span>{' '}
+            {claimDrawReason || 'Pengulangan 3x / 50 langkah'}
           </div>
           <button
             type="button"
             onClick={onClaimDraw}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#291C0E] text-[#E1D4C2] hover:bg-[#6E473B] transition-colors whitespace-nowrap shrink-0"
+            className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#DFC29B] text-[#0E1B14] hover:bg-[#EAD3B3] transition-colors whitespace-nowrap shrink-0"
           >
             <Scale className="w-3.5 h-3.5" />
-            <span>Klaim Remis</span>
+            <span>Klaim</span>
           </button>
-        </div>
+        </motion.div>
       )}
 
-      {/* Algebraic Move Table */}
+      {/* Recessed Algebraic Move Table */}
       <div
         ref={scrollContainerRef}
-        className={`flex-1 min-h-[160px] max-h-[260px] lg:max-h-none overflow-y-auto rounded-lg border-2 p-2 font-mono tabular-nums text-xs ${
+        className={`flex-1 min-h-[150px] max-h-[220px] lg:max-h-[260px] overflow-y-auto rounded-xl border p-1.5 font-mono tabular-nums text-xs [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:rounded-full ${
           isLight
-            ? 'bg-[#E1D4C2] border-[#A78D78] text-[#291C0E]'
-            : 'bg-[#291C0E] border-[#A78D78] text-[#E1D4C2]'
+            ? 'bg-[#EAE6DF] border-[#C5BFB3] text-[#12231B] shadow-inner [scrollbar-color:#7A9A76_#EAE6DF] [&::-webkit-scrollbar-track]:bg-[#EAE6DF] [&::-webkit-scrollbar-thumb]:bg-[#7A9A76]/60 hover:[&::-webkit-scrollbar-thumb]:bg-[#14261D]'
+            : 'bg-[#0A140F] border-[#7A9A76]/30 text-[#F3ECE0] shadow-[inset_0_2px_8px_rgba(0,0,0,0.65)] [scrollbar-color:#7A9A76_#0A140F] [&::-webkit-scrollbar-track]:bg-[#0A140F] [&::-webkit-scrollbar-thumb]:bg-[#7A9A76]/60 hover:[&::-webkit-scrollbar-thumb]:bg-[#DFC29B]'
         }`}
       >
         {moveRows.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center p-5 font-sans">
-            <p className="text-sm font-bold mb-1">Belum Ada Langkah</p>
+          <div className="h-full min-h-[130px] flex flex-col items-center justify-center text-center p-4 font-sans">
+            <p className="text-xs font-serif font-bold mb-1 text-[#DFC29B]">
+              Belum Ada Langkah
+            </p>
             <p
-              className={`text-xs ${
-                isLight ? 'text-[#6E473B]' : 'text-[#BEB5A9]'
+              className={`text-[11px] max-w-[210px] leading-relaxed ${
+                isLight ? 'text-[#4A5D49]' : 'text-[#9BB09D]'
               }`}
             >
-              Ketuk bidak Putih atau tarik bidak ke petak tujuan legal untuk memulai.
+              Klik atau tarik bidak di papan untuk memulai pertandingan.
             </p>
           </div>
         ) : (
           <table className="w-full text-left border-collapse">
             <thead>
               <tr
-                className={`border-b ${
+                className={`border-b text-[11px] ${
                   isLight
-                    ? 'text-[#6E473B] border-[#BEB5A9]'
-                    : 'text-[#BEB5A9] border-[#6E473B]'
+                    ? 'text-[#4A5D49] border-[#C5BFB3]'
+                    : 'text-[#7A9A76] border-[#7A9A76]/25'
                 }`}
               >
-                <th className="py-1.5 px-2 w-12">#</th>
-                <th className="py-1.5 px-2">Putih</th>
-                <th className="py-1.5 px-2">Hitam</th>
+                <th className="py-1 px-2 w-10">#</th>
+                <th className="py-1 px-2">Putih</th>
+                <th className="py-1 px-2">Hitam</th>
               </tr>
             </thead>
             <tbody>
-              {moveRows.map((row) => (
-                <tr
-                  key={row.moveNumber}
-                  className={`border-b last:border-b-0 transition-colors ${
-                    isLight
-                      ? 'border-[#BEB5A9] hover:bg-[#BEB5A9]/60'
-                      : 'border-[#6E473B]/60 hover:bg-[#6E473B]/40'
-                  }`}
-                >
-                  <td
-                    className={`py-1.5 px-2 ${
-                      isLight ? 'text-[#6E473B]' : 'text-[#BEB5A9]'
+              {moveRows.map((row, idx) => {
+                const isLatestRow = idx === moveRows.length - 1;
+                return (
+                  <motion.tr
+                    key={row.moveNumber}
+                    initial={isLatestRow ? { opacity: 0, x: -6 } : false}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.16 }}
+                    className={`transition-colors ${
+                      idx % 2 === 1
+                        ? isLight
+                          ? 'bg-[#DFD9CE]/55'
+                          : 'bg-[#12231B]/75'
+                        : ''
                     }`}
                   >
-                    {row.moveNumber}.
-                  </td>
-                  <td className="py-1.5 px-2 font-bold">
-                    {row.white ? (
-                      <span className="inline-flex items-center gap-1.5">
-                        <span>{row.white.san}</span>
-                        <span
-                          className={`text-[10px] font-normal ${
-                            isLight ? 'text-[#6E473B]' : 'text-[#A78D78]'
-                          }`}
-                        >
-                          ({row.white.from}→{row.white.to})
+                    <td
+                      className={`py-1.5 px-2 ${
+                        isLight ? 'text-[#4A5D49]' : 'text-[#7A9A76]'
+                      }`}
+                    >
+                      {row.moveNumber}.
+                    </td>
+                    <td className="py-1.5 px-2 font-semibold">
+                      {row.white ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          <span
+                            className={
+                              isLatestRow && !row.black && !isLight
+                                ? 'text-[#DFC29B]'
+                                : ''
+                            }
+                          >
+                            {row.white.san}
+                          </span>
+                          <span
+                            className={`text-[10px] font-normal ${
+                              isLight ? 'text-[#4A5D49]' : 'text-[#7A9A76]'
+                            }`}
+                          >
+                            {row.white.from}→{row.white.to}
+                          </span>
                         </span>
-                      </span>
-                    ) : (
-                      ''
-                    )}
-                  </td>
-                  <td className="py-1.5 px-2 font-bold">
-                    {row.black ? (
-                      <span className="inline-flex items-center gap-1.5">
-                        <span>{row.black.san}</span>
-                        <span
-                          className={`text-[10px] font-normal ${
-                            isLight ? 'text-[#6E473B]' : 'text-[#A78D78]'
-                          }`}
-                        >
-                          ({row.black.from}→{row.black.to})
+                      ) : (
+                        ''
+                      )}
+                    </td>
+                    <td className="py-1.5 px-2 font-semibold">
+                      {row.black ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          <span
+                            className={
+                              isLatestRow && !isLight ? 'text-[#DFC29B]' : ''
+                            }
+                          >
+                            {row.black.san}
+                          </span>
+                          <span
+                            className={`text-[10px] font-normal ${
+                              isLight ? 'text-[#4A5D49]' : 'text-[#7A9A76]'
+                            }`}
+                          >
+                            {row.black.from}→{row.black.to}
+                          </span>
                         </span>
-                      </span>
-                    ) : (
-                      ''
-                    )}
-                  </td>
-                </tr>
-              ))}
+                      ) : (
+                        ''
+                      )}
+                    </td>
+                  </motion.tr>
+                );
+              })}
             </tbody>
           </table>
         )}
       </div>
 
       {/* Action Controls Footer */}
-      <div className="pt-3 mt-3 border-t border-[#A78D78] flex flex-wrap items-center gap-2">
+      <div className="pt-3 mt-2.5 flex flex-wrap items-center gap-2">
         {mode === 'local' ? (
           <>
             <button
               type="button"
               disabled={!canUndo}
               onClick={onUndo}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold border transition-colors whitespace-nowrap shrink-0 disabled:opacity-40 disabled:pointer-events-none ${
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-full text-xs font-semibold border transition-all whitespace-nowrap shrink-0 disabled:opacity-35 disabled:pointer-events-none ${
                 isLight
-                  ? 'bg-[#E1D4C2] text-[#291C0E] border-[#6E473B] hover:bg-[#A78D78]'
-                  : 'bg-[#291C0E] text-[#E1D4C2] border-[#A78D78] hover:bg-[#A78D78] hover:text-[#291C0E]'
+                  ? 'bg-[#E2DDD3] text-[#12231B] border-[#C5BFB3] hover:bg-[#D5CFC3]'
+                  : 'bg-[#162B20] text-[#F3ECE0] border-[#7A9A76]/40 hover:border-[#DFC29B] shadow-[inset_0_1px_0_0_rgba(223,194,155,0.1)]'
               }`}
             >
               <Undo2 className="w-3.5 h-3.5" />
@@ -310,10 +348,10 @@ export default function MoveHistoryPanel({
             <button
               type="button"
               onClick={onResetLocal}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-bold border transition-colors whitespace-nowrap shrink-0 ${
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-full text-xs font-bold transition-all whitespace-nowrap shrink-0 ${
                 isLight
-                  ? 'bg-[#6E473B] text-[#E1D4C2] border-[#291C0E] hover:bg-[#291C0E]'
-                  : 'bg-[#E1D4C2] text-[#291C0E] border-[#BEB5A9] hover:bg-[#BEB5A9]'
+                  ? 'bg-[#14261D] text-[#EFE6D5] hover:bg-[#1F3A2C]'
+                  : 'bg-[#DFC29B] text-[#0E1B14] hover:bg-[#EAD3B3] shadow-sm'
               }`}
             >
               <RotateCcw className="w-3.5 h-3.5" />
@@ -328,21 +366,21 @@ export default function MoveHistoryPanel({
                 type="button"
                 disabled={iOfferedDraw}
                 onClick={onOfferDraw}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold border transition-colors whitespace-nowrap shrink-0 disabled:opacity-50 ${
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-full text-xs font-semibold border transition-colors whitespace-nowrap shrink-0 disabled:opacity-50 ${
                   isLight
-                    ? 'bg-[#E1D4C2] text-[#291C0E] border-[#6E473B] hover:bg-[#A78D78]'
-                    : 'bg-[#291C0E] text-[#E1D4C2] border-[#A78D78] hover:bg-[#A78D78] hover:text-[#291C0E]'
+                    ? 'bg-[#E2DDD3] text-[#12231B] border-[#C5BFB3] hover:bg-[#D5CFC3]'
+                    : 'bg-[#162B20] text-[#F3ECE0] border-[#7A9A76]/40 hover:border-[#DFC29B]'
                 }`}
               >
                 <Handshake className="w-3.5 h-3.5" />
-                <span>{iOfferedDraw ? 'Tawaran Remis Terkirim' : 'Tawarkan Remis'}</span>
+                <span>{iOfferedDraw ? 'Tawaran Terkirim' : 'Tawarkan Remis'}</span>
               </button>
 
               {!confirmResign ? (
                 <button
                   type="button"
                   onClick={() => setConfirmResign(true)}
-                  className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-bold bg-[#291C0E] text-[#E1D4C2] border border-[#E1D4C2] hover:bg-[#A78D78] hover:text-[#291C0E] transition-colors whitespace-nowrap shrink-0"
+                  className="flex items-center justify-center gap-1.5 py-2 px-3.5 rounded-full text-xs font-bold bg-[#4E392B] text-[#EFE6D5] hover:bg-[#991B1B] transition-colors whitespace-nowrap shrink-0"
                 >
                   <Flag className="w-3.5 h-3.5" />
                   <span>Menyerah</span>
@@ -355,14 +393,14 @@ export default function MoveHistoryPanel({
                       setConfirmResign(false);
                       onResign?.();
                     }}
-                    className="py-2 px-3 rounded-lg text-xs font-bold bg-[#291C0E] text-[#E1D4C2] border-2 border-[#E1D4C2] hover:bg-[#A78D78] hover:text-[#291C0E] transition-colors whitespace-nowrap shrink-0"
+                    className="py-2 px-3 rounded-full text-xs font-bold bg-[#B91C1C] text-white hover:bg-[#991B1B] transition-colors whitespace-nowrap shrink-0"
                   >
                     Ya, Menyerah
                   </button>
                   <button
                     type="button"
                     onClick={() => setConfirmResign(false)}
-                    className="py-2 px-2.5 rounded-lg text-xs font-semibold bg-[#E1D4C2] text-[#291C0E] border border-[#291C0E] hover:bg-[#BEB5A9] transition-colors whitespace-nowrap shrink-0"
+                    className="py-2 px-2.5 rounded-full text-xs font-semibold bg-[#DFC29B] text-[#0E1B14] hover:bg-[#EAD3B3] transition-colors whitespace-nowrap shrink-0"
                   >
                     Batal
                   </button>

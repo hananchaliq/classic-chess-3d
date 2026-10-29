@@ -1,79 +1,85 @@
-# Rencana Implementasi: Optimasi Mobile 2D / Desktop 3D, Tata Letak Sederhana, Panduan Pengguna & Palet Warna Hangat
+# Rencana Implementasi: Restrukturisasi Arena Fokus, Animasi Interaktif & Pendalaman Tema Gelap Classic Chess
 
-## 1. Tujuan & Konteks Masalah
-Berdasarkan hasil analisis PageSpeed Insights dan kebutuhan pengguna:
-1. **Performa & Kompatibilitas Mobile**: Memuat engine 3D (Three.js, WebGL, geometri 3D) secara langsung di semua perangkat membuat beban JavaScript awal tinggi (Total Blocking Time besar) dan kurang nyaman di layar HP/Tablet.
-2. **Pemisahan Visual 2D & 3D**:
-   - **Mobile & Tablet (`< 1024px`)**: Otomatis menggunakan **Papan Catur 2D SVG Ringan (`ChessBoard2D`)** tanpa memuat bundle Three.js sama sekali agar cepat, responsif, dan hemat baterai/memori.
-   - **Desktop (`>= 1024px`)**: Otomatis menampilkan **Papan Catur 3D (`ChessBoard3D`)** melalui *dynamic import* (`next/dynamic`, `ssr: false`), dilengkapi **tombol pengalih 2D / 3D** agar pengguna desktop/laptop juga bebas beralih ke mode 2D kapan saja.
-3. **Sistem Palet 5 Warna Solid (Tanpa Gradasi) + Tombol Tema Terang & Gelap Hangat**:
-   Menggunakan kelima warna dari referensi gambar secara menyeluruh dan saling melengkapi (**tanpa gradasi CSS**):
-   - `#291C0E` (*Deep Espresso*)
-   - `#6E473B` (*Roasted Chestnut*)
-   - `#A78D78` (*Warm Taupe*)
-   - `#BEB5A9` (*Soft Warm Stone*)
-   - `#E1D4C2` (*Warm Cream*)
-4. **Tata Letak Sederhana & Panduan Pengguna Interaktif**:
-   - Menyederhanakan navigasi dan panel kontrol agar bersih, rapi, dan mudah dipahami di layar HP, tablet, maupun desktop.
-   - Menambahkan **Panel Panduan Ringkas** di layar utama serta **Pop-up Panduan Interaktif Langkah demi Langkah** untuk membantu pemain baru maupun pemain yang ingin bermain bersama teman.
+## 1. Gambaran Umum Aplikasi (App Overview)
+Pembaruan menyeluruh pada aplikasi **Classic Chess** untuk menghadirkan pengalaman bermain catur yang jauh lebih fokus, hidup dengan animasi halus, serta bebas dari elemen antarmuka yang menumpuk:
+- **Layout "Arena Fokus" ala Chess.com**: Menghapus duplikasi navigasi, kartu panduan besar di bawah papan, dan footer yang memakan ruang. Seluruh layar terfokus pada area papan catur utama di sisi kiri/tengah dan **satu Panel Kanan Terpadu (Unified Control Deck)** yang mengintegrasikan mode permainan, konfigurasi lawan/ruangan, riwayat notasi, dan kontrol aksi.
+- **Animasi Lengkap & Responsif (`motion/react` + CSS Transform)**: Menambahkan animasi meluncur (*spring glide*) saat bidak bergerak, efek visual saat memakan bidak (*capture burst/scale*), sorotan dinamis saat Raja terkena Skak (*check pulse*), serta transisi halus saat berpindah tab atau membuka panel.
+- **Tema Gelap Berdimensi Tinggi (Deep Dimensional Dark Mode)**: Merombak tema gelap agar tidak lagi terlihat datar (*flat*) dengan menerapkan hierarki kedalaman berlapis (*layered surface elevation*), pencahayaan ambient radial halus, bingkai papan kayu espresso bertekstur dengan bayangan dalam (*inset & drop shadow*), serta aksen garis tepi *warm bronze specular*.
+- **Panduan Kompak di Bar Atas**: Menggantikan kartu panduan besar di bawah papan menjadi tombol bantuan ringkas di *top bar* yang membuka pop-up panduan interaktif langkah demi langkah kapan saja dibutuhkan.
+- **Fleksibilitas Responsif Semua Perangkat & Aturan 3D Khusus Komputer**: Papan catur menyesuaikan ukuran layar secara proporsional (`clamp` / rasio 1:1 fleksibel) dari layar ponsel kecil, tablet, hingga monitor desktop lebar. Mode **3D WebGL (`ChessBoard3D`)** dikunci secara eksklusif hanya untuk pengguna Komputer/Desktop (`>= 1024px`), sementara HP dan Tablet otomatis menjalankan papan 2D bergaya Chess.com yang ringan.
 
 ---
 
-## 2. Desain Sistem Warna (5 Warna Solid Saling Melengkapi, Tanpa Gradasi)
-
-Seluruh komponen akan menggunakan variabel CSS / kelas warna solid dari kelima warna palet dengan tombol **Ganti Tema (Terang Hangat / Gelap Hangat)** di bilah atas:
-
-| Elemen UI | Tema Terang Hangat (Default) | Tema Gelap Hangat |
-| :--- | :--- | :--- |
-| **Latar Utama (Canvas)** | `#E1D4C2` (Warm Cream) | `#291C0E` (Deep Espresso) |
-| **Panel & Kartu Utama** | `#BEB5A9` (Soft Warm Stone) | `#6E473B` (Roasted Chestnut) |
-| **Sub-Panel & Pembatas (Border)** | `#A78D78` (Warm Taupe) | `#A78D78` (Warm Taupe) |
-| **Aksen Interaktif & Tombol Aktif** | `#6E473B` (Roasted Chestnut) | `#E1D4C2` (Warm Cream) |
-| **Teks Utama & Kontras Tinggi** | `#291C0E` (Deep Espresso) | `#E1D4C2` (Warm Cream) |
-| **Teks Sekunder & Label** | `#6E473B` (Roasted Chestnut) | `#BEB5A9` (Soft Warm Stone) |
-| **Petak Papan Catur 2D** | Terang: `#E1D4C2` · Gelap: `#A78D78` · Bingkai: `#291C0E` & `#6E473B` | Terang: `#E1D4C2` · Gelap: `#A78D78` · Bingkai: `#291C0E` & `#BEB5A9` |
+## 2. Arahan Estetika & Dimensi Tema Gelap (Aesthetic Direction)
+- **Domain**: Permainan Strategi Papan Catur Modern & Editorial Mewah (*Tactile Chess Arena*).
+- **Persona Estetika**: **Warm Obsidian & Espresso Club** — memadukan ketajaman kontras ala platform catur turnamen modern (Chess.com) dengan kemewahan material kayu mahoni/espresso, tipografi serif klasik (*Glinster / Laluna* via *Playfair Display*), dan emblem Kuda Catur Bermahkota.
+- **Penyempurnaan Tema Gelap (Anti-Flat Dark Theme)**:
+  - **Kedalaman 3 Lapis (3-Tier Surface Depth)**: Memisahkan kanvas latar belakang utama (`#120B06` dengan pendaran radial halus `#291C0E`), permukaan kartu/panel utama (`#1C120B`), dan permukaan elemen interaktif/kotak aktif (`#291C0E` hingga `#382615`).
+  - **Specular Rim & Tactile Framing**: Setiap panel dan bingkai papan catur di mode gelap dilengkapi garis tepi atas yang sedikit lebih terang (`border-top: 1px solid rgba(225, 212, 194, 0.14)`) dan bayangan bawah berlapis untuk menciptakan ilusi objek fisik yang nyata.
 
 ---
 
-## 3. Arsitektur & Komponen yang Akan Dibuat / Dimodifikasi
+## 3. Palet Warna (Color Palette)
 
-### A. Komponen Baru: `components/chess/ChessBoard2D.tsx`
-- Papan catur 2D berbasis SVG & CSS Grid yang sangat ringan (0 KB ketergantungan 3D).
-- **Fitur**:
-  - Ikon bidak catur Staunton 2D vektor (SVG) dengan kontras tegas: Bidak Putih (`#E1D4C2` dengan garis tegas `#291C0E`) dan Bidak Hitam (`#291C0E` dengan detail aksen `#BEB5A9`).
-  - Mendukung klik/sentuh (*tap-to-move*) dan seret (*drag-and-drop*) yang ramah layar sentuh HP/Tablet (`touch-action: manipulation`).
-  - Indikator petak terpilih, titik langkah sah (*legal moves*), sorotan langkah terakhir, saran taktis (*hint*), dan peringatan Raja sedang Skak (*Check*).
-  - Koordinat baris (`1–8`) dan kolom (`a–h`) yang otomatis menyesuaikan orientasi papan (Putih/Hitam) serta tombol putar papan.
+| Peran Warna | Mode Gelap Berdimensi (Deep Espresso) | Mode Terang Hangat (Warm Editorial) | Keterangan Penggunaan |
+| :--- | :--- | :--- | :--- |
+| **Background Primary (Kanvas)** | `#120B06` (Obsidian Roast + Radial `#1F140B`) | `#E1D4C2` (Warm Cream Linen) | Latar belakang utama ruang arena catur |
+| **Background Secondary (Panel/Deck)** | `#1B120A` (Elevated Espresso Surface) | `#EBE1D3` (Soft Ivory Card) | Panel samping terpadu, bar pemain, dan header |
+| **Surface Interactive / Elevated** | `#291C0E` (Deep Coffee Container) | `#DFD3C3` (Warm Sand Surface) | Tab aktif, baris riwayat langkah, dan pemilih mode |
+| **Text Primary** | `#F2E8DA` (Crisp Parchment Cream) | `#291C0E` (Deep Espresso Ink) | Judul, nama pemain, jam catur, dan notasi utama |
+| **Text Secondary / Muted** | `#B8A390` (Warm Muted Taupe) | `#6E473B` (Roasted Umber) | Label sekunder, koordinat, dan keterangan langkah |
+| **Accent Primary** | `#C89D66` (Burnished Warm Gold / Amber) | `#6E473B` (Rich Mahogany) | Tombol aksi utama, indikator giliran aktif, dan sorotan |
+| **Accent Secondary** | `#A78D78` (Warm Mocha Bronze) | `#A78D78` (Warm Mocha) | Garis tepi aktif, lencana emblem, dan tombol sekunder |
+| **Semantic Status (Check / Win / Draw)** | `#10B981` (Win), `#F59E0B` (Draw/Hint), `#EF4444` (Check/Alert) | `#059669` (Win), `#D97706` (Draw/Hint), `#DC2626` (Check/Alert) | Sorotan petak Raja saat Skak, panah bantuan AI, dan status hasil |
 
-### B. Komponen Baru: `components/game/UserGuideModal.tsx`
-- Menyediakan **2 bentuk panduan** sesuai pilihan pengguna:
-  1. **Kartu Panduan Ringkas (`QuickGuideCard`)** di layar utama: menampilkan 4 poin singkat cara bermain (Pilih Mode, Gerakkan Bidak, Gunakan Hint AI, dan Undang Teman di Room Online) beserta tombol **"Buka Panduan Lengkap"**.
-  2. **Pop-up Interaktif Langkah demi Langkah (`UserGuideModal`)**: panduan visual bertahap (4 langkah dengan navigasi *Sebelumnya / Selanjutnya*) yang menjelaskan:
-     - **Langkah 1**: Cara Menggerakkan Bidak & Indikator Petak (2D & 3D).
-     - **Langkah 2**: Bermain Melawan Bot AI & Membaca Evaluasi / Hint.
-     - **Langkah 3**: Bermain Online Bersama Teman (Buat Room, Bagikan Kode, Terima Lawan).
-     - **Langkah 4**: Aturan Khusus FIDE (Rokade, Promosi Pion, En Passant, Klaim Remis) & Pengaturan Tampilan (2D/3D & Tema).
-
-### C. Optimasi & Penyederhanaan: `components/game/ClassicChessApp.tsx`
-- **Lazy Loading 3D**: Mengubah import `ChessBoard3D` menjadi `dynamic(() => import('../chess/ChessBoard3D'), { ssr: false })` sehingga kode Three.js hanya diunduh ketika mode 3D aktif di perangkat Desktop.
-- **Deteksi Perangkat Otomatis + Opsi Beralih di Desktop**:
-  - Saat dibuka di HP/Tablet (`< 1024px`), otomatis menggunakan tampilan **2D**.
-  - Saat dibuka di Desktop (`>= 1024px`), otomatis menggunakan tampilan **3D** dengan tombol pengalih cepat **`Mode 2D / Mode 3D`** di bilah kontrol papan.
-- **Tombol Tema Terang & Gelap Hangat**: Menyediakan tombol pengalih tema (`Terang Hangat` / `Gelap Hangat`) yang menerapkan kelima warna palet secara konsisten di seluruh halaman.
-- **Tata Letak Responsif yang Lebih Sederhana**:
-  - Di Mobile & Tablet: Papan catur 2D tampil proporsional (`aspect-square`) di bagian atas tanpa terpotong, diikuti bar pemain yang ringkas, pemilih mode (Bot AI / Room Online / Latihan), panduan singkat, dan riwayat langkah.
-  - Di Desktop: Tata letak 2 kolom bersih (Papan Catur 3D/2D di kiri, Panel Mode + Panduan Ringkas + Riwayat Langkah di kanan).
-
-### D. Penyesuaian Warna & Kesederhanaan Komponen Pendukung
-- `components/game/PlayerClockBar.tsx`: Menyesuaikan warna bar pemain, jam catur, dan indikator giliran menggunakan 5 warna palet solid (`#291C0E`, `#6E473B`, `#A78D78`, `#BEB5A9`, `#E1D4C2`).
-- `components/game/MoveHistoryPanel.tsx`: Menyesuaikan tabel notasi langkah dan tombol aksi (Undo, Menyerah, Remis) dengan warna palet baru dan tata letak lebih bersih.
-- `components/game/RoomLobbyAndChatPanel.tsx`: Menyesuaikan lobi multiplayer dan ruang tunggu agar selaras dengan palet 5 warna solid tanpa mengubah logika sinkronisasi room yang sudah berjalan stabil.
-- `components/chess/PromotionModal.tsx` & `app/globals.css` & `app/layout.tsx`: Menyelaraskan variabel warna tema terang/gelap hangat dan memperbaiki meta viewport/performa halaman.
+*(Ditambah 8 tema papan catur 2D pilihan seperti Espresso & Cream, Classic Tournament Green, Walnut Club, Icy Sea, dll. yang dapat diganti langsung oleh pemain).*
 
 ---
 
-## 4. Tahapan Verifikasi
-1. Memastikan tidak ada penggunaan warna gradasi (`bg-gradient-*`) pada antarmuka utama dan kelima warna (`#291C0E`, `#6E473B`, `#A78D78`, `#BEB5A9`, `#E1D4C2`) berpadu secara solid di Tema Terang maupun Tema Gelap.
-2. Memastikan tampilan Mobile/Tablet (`< 1024px`) merender `ChessBoard2D` secara instan tanpa mengunduh bundle Three.js, serta tampilan Desktop (`>= 1024px`) merender `ChessBoard3D` dengan tombol ganti ke `2D`.
-3. Menguji Panel Panduan Ringkas dan Pop-up Panduan Interaktif Langkah demi Langkah.
-4. Menjalankan pemeriksaan tipe dan build produksi (`lint_applet` dan `compile_applet`) untuk memastikan tidak ada error dan performa optimal.
+## 4. Tipografi (Typography)
+- **Heading & Branding Font**: `Playfair Display` (SemiBold 600 & Bold 700, terinspirasi karakter serif klasik *Glinster* dan *Laluna*) untuk identitas **Classic Chess**, modal kemenangan, dan judul bagian utama.
+- **Body & UI Controls**: `Plus Jakarta Sans` (Regular 400, Medium 500, SemiBold 600) untuk keterbacaan optimal pada tombol, tab, dan panduan ringkas di semua ukuran layar.
+- **Monospace (Jam, Notasi & Kode Room)**: `JetBrains Mono` dengan `tabular-nums` untuk jam catur, tabel notasi langkah FIDE, dan kode ruangan 6 huruf agar angka tidak bergeser saat berdetak.
+
+---
+
+## 5. Struktur Layout Baru & Responsivitas (Layout Structure)
+Elemen yang berlebihan (duplikasi kartu mode di atas kanan, kartu panduan besar di bawah papan, dan footer panjang) dihapus dan digantikan oleh struktur **Arena Fokus**:
+
+1. **Compact Top Bar (3 Zona Bersih)**:
+   - **Kiri**: Emblem Kuda Catur Bermahkota + wordmark **Classic Chess**.
+   - **Tengah**: Pemilih Mode Permainan langsung dalam 1 baris bersih (*Lawan Bot AI*, *Multiplayer Online*, *Latihan Lokal*).
+   - **Kanan**: Tombol **Panduan Ringkas** (ikon tanda tanya/buku yang membuka pop-up interaktif), tombol **Studio Tampilan Papan**, dan pengalih **Tema Gelap/Terang**.
+2. **Kolom Utama Kiri/Tengah — Arena Papan Catur Proporsional**:
+   - **Bar Pemain Lawan (Atas)** & **Bar Pemain Anda (Bawah)**: Menampilkan avatar emblem, nama, selisih bidak yang dimakan, dan jam catur beranimasi.
+   - **Kanvas Papan Catur Fleksibel**: Ukuran papan otomatis menyesuaikan tinggi dan lebar viewport (`max-w-[min(100%,72vh)]` di desktop dan `100%` lebar layar di mobile) sehingga papan serta kedua jam pemain terlihat utuh dalam satu layar tanpa perlu *scroll* berlebih.
+   - **Toolbar Cepat di Bawah Bar Pemain**: Tombol ringkas untuk Putar Papan, Suara, Bantuan AI (*Hint*), dan pengalih **2D / 3D** (tombol 3D hanya dirender pada layar Desktop `>= 1024px`).
+3. **Kolom Kanan — Satu Panel Kontrol Terpadu (Unified Sidebar Deck)**:
+   - Menggunakan sistem tab beranimasi (`motion/react`) yang rapi:
+     - **Tab 1: Pertandingan & Notasi**: Pengaturan instan (level AI / kontrol waktu), daftar langkah notasi aljabar dua kolom yang otomatis *scroll* ke langkah terbaru, serta tombol aksi pertandingan (Undo, Mulai Ulang, Remis, Menyerah).
+     - **Tab 2: Lobi & Obrolan (Aktif di Multiplayer)**: Pembuatan/gabung kode room 6 karakter, daftar room publik, dan obrolan langsung bersama lawan.
+4. **Adaptasi Mobile & Tablet (`< 1024px`)**:
+   - Papan 2D tampil penuh dan tajam di bagian atas dengan bar lawan dan pemain mengapit papan secara kompak.
+   - Panel Kontrol di bawah papan disajikan dalam bentuk kartu ber-tab yang ringkas dan bebas *overflow* horizontal.
+
+---
+
+## 6. Fitur Utama & Sistem Animasi (Core Capabilities)
+- **Animasi Pergerakan Bidak & Efek Makan (`ChessBoard2D.tsx`)**:
+  - Setiap bidak 2D dianimasikan menggunakan `motion/react` (`layoutId` / transisi koordinat *spring* cepat `< 180ms`) sehingga bidak terlihat meluncur mulus dari petak asal ke petak tujuan.
+  - Saat terjadi langkah memakan bidak (*capture*), muncul efek gelombang cincin halus (*capture ripple*) pada petak tujuan dan animasi masuk pada daftar bidak yang tertangkap di bar pemain.
+  - Saat Raja berada dalam posisi **Skak (Check)**, petak Raja menampilkan pendaran merah berdenyut (*radial crimson pulse*) disertai indikator status yang jelas.
+- **Animasi Transisi Antarmuka (`ClassicChessApp.tsx` & Panel)**:
+  - Indikator tab aktif menggunakan animasi *sliding pill* (`layoutId="activeTab"`), perpindahan isi panel menggunakan `AnimatePresence` (`opacity` & `translateY`), dan modal hasil pertandingan/panduan muncul dengan efek *spring scale* yang elegan.
+- **Panduan Interaktif Kompak (`UserGuideModal.tsx`)**:
+  - Kartu panduan besar di halaman utama dihapus agar tidak memenuhi layar.
+  - Digantikan oleh tombol **Panduan** di *top bar* yang membuka pop-up interaktif ber-tab kompak: (1) *Cara Jalan & Gerakan Bidak*, (2) *Aturan Khusus FIDE (Rokade, En Passant, Promosi)*, dan (3) *Cara Main Multiplayer & Kustomisasi Tema*.
+- **Isolasi Ketat Papan 3D Khusus Desktop**:
+  - Komponen Three.js (`ChessBoard3D`) dimuat secara *lazy* (`next/dynamic`, `ssr: false`) hanya ketika lebar layar terdeteksi `>= 1024px` dan pengguna memilih mode 3D. Pengguna smartphone dan tablet dijamin 100% menggunakan mode 2D berkinerja tinggi.
+
+---
+
+## 7. Di Luar Cakupan (Out of Scope)
+- Mengubah protokol backend Socket.IO / REST API multiplayer yang sudah stabil.
+- Menambahkan fitur login akun pihak ketiga (OAuth) atau sistem pembayaran.
+- Merender model 3D WebGL pada perangkat mobile/tablet (demi menjaga performa dan skor PageSpeed mobile).

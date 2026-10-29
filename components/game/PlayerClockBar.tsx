@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import type { ClockSnapshot, PieceColor, PieceSymbol } from '../../types/chess.ts';
+import { ChessBrandEmblem } from './ChessBrandLogo.tsx';
 import { Clock, ShieldAlert, Wifi, WifiOff } from 'lucide-react';
 
 interface PlayerClockBarProps {
@@ -71,160 +73,182 @@ export default function PlayerClockBar({
     };
   }, [clocks, color]);
 
-  const baseClockMs = !clocks || clocks.isUnlimited ? 0 : color === 'w' ? clocks.whiteMs : clocks.blackMs;
+  const baseClockMs =
+    !clocks || clocks.isUnlimited ? 0 : color === 'w' ? clocks.whiteMs : clocks.blackMs;
   const displayMs =
     clocks && !clocks.isUnlimited && clocks.activeColor === color && liveRemainingMs !== null
       ? liveRemainingMs
       : baseClockMs;
 
-  // Captured pieces shown next to this player are the opponent's color pieces they captured
   const capturedPieceColor: PieceColor = color === 'w' ? 'b' : 'w';
-  const isLowTime = Boolean(clocks && !clocks.isUnlimited && displayMs < 20000 && displayMs > 0);
+  const isLowTime = Boolean(
+    clocks && !clocks.isUnlimited && displayMs < 20000 && displayMs > 0
+  );
   const isLight = themeMode === 'light';
 
   return (
-    <div
-      className={`flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl border-2 transition-colors ${
+    <motion.div
+      layout
+      transition={{ duration: 0.18, ease: 'easeOut' }}
+      className={`w-full flex items-center justify-between gap-2.5 px-3.5 py-2 rounded-2xl border transition-all ${
         isLight
           ? isTurn
-            ? 'bg-[#BEB5A9] border-[#291C0E] text-[#291C0E]'
-            : 'bg-[#BEB5A9] border-[#A78D78] text-[#291C0E]'
+            ? 'bg-[#F4F1EA] border-[#5E785D] text-[#12231B] shadow-[0_8px_22px_-6px_rgba(18,35,27,0.16)]'
+            : 'bg-[#ECE8DF]/90 border-[#C5BFB3] text-[#12231B]'
           : isTurn
-          ? 'bg-[#6E473B] border-[#E1D4C2] text-[#E1D4C2]'
-          : 'bg-[#6E473B] border-[#A78D78] text-[#E1D4C2]'
+          ? 'bg-[#152A20] border-[#DFC29B]/65 text-[#F3ECE0] shadow-[0_12px_28px_-8px_rgba(0,0,0,0.75),inset_0_1px_0_0_rgba(223,194,155,0.18)]'
+          : 'bg-[#0F1E17] border-[#7A9A76]/30 text-[#E5DEC9] shadow-[inset_0_1px_0_0_rgba(122,154,118,0.08)]'
       }`}
     >
-      {/* Left: Player identity, piece color swatch, captured pieces */}
-      <div className="flex items-center gap-3 min-w-0">
-        <div
-          className={`w-8 h-8 rounded-lg flex items-center justify-center text-base font-bold shrink-0 border-2 ${
-            color === 'w'
-              ? 'bg-[#E1D4C2] text-[#291C0E] border-[#6E473B]'
-              : 'bg-[#291C0E] text-[#E1D4C2] border-[#A78D78]'
-          }`}
-          title={color === 'w' ? 'Pemain Putih' : 'Pemain Hitam'}
-        >
-          {color === 'w' ? '♔' : '♚'}
-        </div>
+      {/* Left: Branded Player Emblem, Identity, & Captured Material */}
+      <div className="flex items-center gap-2.5 min-w-0">
+        <ChessBrandEmblem
+          size="sm"
+          variant={color === 'w' ? 'sand' : 'forest'}
+        />
 
         <div className="min-w-0">
-          <div className="flex items-center gap-2 text-sm font-bold">
-            <span className="truncate max-w-[150px] sm:max-w-[230px]">{displayName}</span>
-            {typeof rating === 'number' && (
-              <span
-                className={`text-xs font-normal font-mono tabular-nums ${
-                  isLight ? 'text-[#6E473B]' : 'text-[#BEB5A9]'
-                }`}
-              >
-                · {rating}
-              </span>
-            )}
-            {roleBadge && (
-              <span
-                className={`px-1.5 py-0.5 rounded text-[11px] font-semibold whitespace-nowrap border ${
-                  isLight
-                    ? 'bg-[#291C0E] text-[#E1D4C2] border-[#6E473B]'
-                    : 'bg-[#291C0E] text-[#E1D4C2] border-[#A78D78]'
-                }`}
-              >
-                {roleBadge}
-              </span>
-            )}
-            {isMultiplayer && (
-              <span
-                className="inline-flex items-center gap-1 text-xs font-normal"
-                title={connected ? 'Terhubung ke room' : 'Terputus sementara'}
-              >
-                {connected ? (
-                  <Wifi className="w-3.5 h-3.5" />
-                ) : (
-                  <WifiOff className="w-3.5 h-3.5 opacity-60" />
-                )}
-              </span>
-            )}
+          <div className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold">
+            <span className="font-serif text-sm sm:text-base font-bold truncate max-w-[140px] sm:max-w-[220px]">
+              {displayName}
+            </span>
+
+            <div
+              className={`flex items-center gap-1 text-xs font-normal ${
+                isLight ? 'text-[#4A5D49]' : 'text-[#9BB09D]'
+              }`}
+            >
+              {typeof rating === 'number' && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className="font-mono tabular-nums text-[11px]">{rating}</span>
+                </>
+              )}
+              {roleBadge && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span
+                    className={`font-medium text-[11px] ${
+                      isTurn && !isLight ? 'text-[#DFC29B]' : ''
+                    }`}
+                  >
+                    {roleBadge}
+                  </span>
+                </>
+              )}
+              {isMultiplayer && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span
+                    className="inline-flex items-center"
+                    title={connected ? 'Terhubung ke room' : 'Terputus sementara'}
+                  >
+                    {connected ? (
+                      <Wifi className="w-3 h-3 text-[#7A9A76]" />
+                    ) : (
+                      <WifiOff className="w-3 h-3 opacity-60" />
+                    )}
+                  </span>
+                </>
+              )}
+            </div>
           </div>
 
-          {/* Captured pieces & material diff */}
-          <div className="flex items-center gap-1.5 text-xs min-h-[18px]">
+          {/* Captured pieces & material diff with smooth pop-in */}
+          <div className="flex items-center gap-1.5 text-xs min-h-[16px]">
             {capturedPieces.length > 0 ? (
-              <span
-                className={`tracking-tight text-sm leading-none ${
-                  isLight ? 'text-[#291C0E]' : 'text-[#E1D4C2]'
+              <div
+                className={`inline-flex items-center tracking-tight text-sm leading-none ${
+                  isLight ? 'text-[#12231B]' : 'text-[#F3ECE0]'
                 }`}
               >
-                {capturedPieces.map((p, idx) => (
-                  <span key={`${p}-${idx}`}>{CAPTURED_UNICODE[capturedPieceColor][p]}</span>
-                ))}
-              </span>
+                <AnimatePresence initial={false}>
+                  {capturedPieces.map((p, idx) => (
+                    <motion.span
+                      key={`${p}-${idx}`}
+                      initial={{ scale: 0.4, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ type: 'spring', stiffness: 420, damping: 24 }}
+                    >
+                      {CAPTURED_UNICODE[capturedPieceColor][p]}
+                    </motion.span>
+                  ))}
+                </AnimatePresence>
+              </div>
             ) : (
               <span
                 className={`text-[11px] ${
-                  isLight ? 'text-[#6E473B]' : 'text-[#BEB5A9]'
+                  isLight ? 'text-[#4A5D49]/80' : 'text-[#7A9A76]'
                 }`}
               >
-                {color === 'w' ? 'Sisi Putih' : 'Sisi Hitam'}
+                {color === 'w' ? 'Bidak Putih' : 'Bidak Hitam'}
               </span>
             )}
 
             {materialAdvantage > 0 && (
-              <span
-                className={`px-1.5 py-0.2 rounded font-mono tabular-nums text-[11px] font-bold ${
-                  isLight
-                    ? 'bg-[#6E473B] text-[#E1D4C2]'
-                    : 'bg-[#E1D4C2] text-[#291C0E]'
+              <motion.span
+                key={`adv-${materialAdvantage}`}
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className={`font-mono tabular-nums text-[11px] font-bold ${
+                  isLight ? 'text-[#1F4031]' : 'text-[#DFC29B]'
                 }`}
               >
                 +{materialAdvantage}
-              </span>
+              </motion.span>
             )}
 
             {inCheck && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-bold bg-[#291C0E] text-[#E1D4C2] border border-[#E1D4C2] ml-1">
+              <motion.span
+                initial={{ scale: 0.85, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-[#EF4444]"
+              >
                 <ShieldAlert className="w-3 h-3" />
-                <span>SKAK</span>
-              </span>
+                <span>Skak</span>
+              </motion.span>
             )}
           </div>
         </div>
       </div>
 
-      {/* Right: Turn indicator & Chess Clock */}
-      <div className="flex items-center gap-2.5 shrink-0">
+      {/* Right: Turn Status & Dimensional Pill Clock */}
+      <div className="flex items-center gap-2 shrink-0">
         {isTurn && (
-          <span
-            className={`hidden sm:inline-block px-2 py-0.5 rounded text-xs font-semibold whitespace-nowrap ${
-              isLight
-                ? 'bg-[#A78D78] text-[#291C0E]'
-                : 'bg-[#A78D78] text-[#291C0E]'
+          <motion.span
+            initial={{ opacity: 0, x: 4 }}
+            animate={{ opacity: 1, x: 0 }}
+            className={`hidden sm:inline-block text-[11px] font-semibold ${
+              isLight ? 'text-[#1F4031]' : 'text-[#DFC29B]'
             }`}
           >
-            Giliran Jalan
-          </span>
+            Giliran
+          </motion.span>
         )}
 
         <div
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-mono tabular-nums text-sm sm:text-base font-bold border-2 ${
+          className={`flex items-center gap-1.5 px-3 py-1 rounded-full font-mono tabular-nums text-xs sm:text-sm font-bold border transition-all ${
             clocks?.isUnlimited
               ? isLight
-                ? 'bg-[#E1D4C2] text-[#291C0E] border-[#A78D78]'
-                : 'bg-[#291C0E] text-[#BEB5A9] border-[#A78D78]'
+                ? 'bg-[#E2DDD3] text-[#12231B] border-[#C5BFB3]'
+                : 'bg-[#0A140F] text-[#9BB09D] border-[#7A9A76]/30 shadow-[inset_0_2px_4px_rgba(0,0,0,0.5)]'
               : isLowTime
-              ? 'bg-[#291C0E] text-[#E1D4C2] border-[#E1D4C2]'
+              ? 'bg-[#B91C1C] text-white border-[#7F1D1D] animate-pulse'
               : isTurn
               ? isLight
-                ? 'bg-[#6E473B] text-[#E1D4C2] border-[#291C0E]'
-                : 'bg-[#E1D4C2] text-[#291C0E] border-[#BEB5A9]'
+                ? 'bg-[#14261D] text-[#EFE6D5] border-[#14261D]'
+                : 'bg-[#DFC29B] text-[#0E1B14] border-[#DFC29B] shadow-sm'
               : isLight
-              ? 'bg-[#E1D4C2] text-[#291C0E] border-[#A78D78]'
-              : 'bg-[#291C0E] text-[#E1D4C2] border-[#A78D78]'
+              ? 'bg-[#E2DDD3] text-[#4A5D49] border-[#C5BFB3]'
+              : 'bg-[#0A140F] text-[#9BB09D] border-[#7A9A76]/30 shadow-[inset_0_2px_4px_rgba(0,0,0,0.5)]'
           }`}
         >
-          <Clock className="w-4 h-4 shrink-0" />
+          <Clock className="w-3.5 h-3.5 shrink-0" />
           <span>
             {!clocks || clocks.isUnlimited ? '∞ Santai' : formatChessClockMs(displayMs)}
           </span>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }

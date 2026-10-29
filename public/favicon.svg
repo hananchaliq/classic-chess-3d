@@ -1,59 +1,50 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <defs>
-    <radialGradient id="bgGlow" cx="50%" cy="30%" r="75%">
-      <stop offset="0%" stop-color="#2C241D" />
-      <stop offset="65%" stop-color="#171411" />
-      <stop offset="100%" stop-color="#0D0B09" />
-    </radialGradient>
-    <linearGradient id="goldCrown" x1="16" y1="8" x2="48" y2="56" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#F6E3B4" />
-      <stop offset="35%" stop-color="#D8B572" />
-      <stop offset="70%" stop-color="#B38942" />
-      <stop offset="100%" stop-color="#7B5924" />
-    </linearGradient>
-    <linearGradient id="goldRim" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#E6C98F" stop-opacity="0.85" />
-      <stop offset="50%" stop-color="#9A7438" stop-opacity="0.4" />
-      <stop offset="100%" stop-color="#E6C98F" stop-opacity="0.75" />
-    </linearGradient>
-  </defs>
+  <!-- Outer Editorial Medallion Shield in Deep Espresso #291C0E and Roasted Chestnut #6E473B -->
+  <rect x="3" y="3" width="58" height="58" rx="16" fill="#291C0E" stroke="#A78D78" stroke-width="2.5" />
+  <rect x="7" y="7" width="50" height="50" rx="12" fill="#6E473B" fill-opacity="0.35" stroke="#BEB5A9" stroke-width="1" stroke-opacity="0.45" />
 
-  <!-- Outer Rounded Crest Shield / Tile -->
-  <rect x="3" y="3" width="58" height="58" rx="14" fill="url(#bgGlow)" stroke="url(#goldRim)" stroke-width="2" />
+  <!-- Subtle 2x2 Chessboard Corner Accents -->
+  <rect x="10" y="10" width="5" height="5" rx="1" fill="#A78D78" fill-opacity="0.35" />
+  <rect x="49" y="10" width="5" height="5" rx="1" fill="#A78D78" fill-opacity="0.35" />
+  <rect x="10" y="49" width="5" height="5" rx="1" fill="#A78D78" fill-opacity="0.35" />
+  <rect x="49" y="49" width="5" height="5" rx="1" fill="#A78D78" fill-opacity="0.35" />
 
-  <!-- Subtle Chessboard Corner Accents -->
-  <rect x="8" y="8" width="6" height="6" rx="1.5" fill="#C7A66A" fill-opacity="0.14" />
-  <rect x="50" y="8" width="6" height="6" rx="1.5" fill="#C7A66A" fill-opacity="0.14" />
-  <rect x="8" y="50" width="6" height="6" rx="1.5" fill="#C7A66A" fill-opacity="0.14" />
-  <rect x="50" y="50" width="6" height="6" rx="1.5" fill="#C7A66A" fill-opacity="0.14" />
-
-  <!-- Staunton King Cross Finial -->
+  <!-- Royal Crown atop the Knight -->
   <path
-    d="M30.2 8.5H33.8V12.2H37.5V15.8H33.8V19.5H30.2V15.8H26.5V12.2H30.2V8.5Z"
-    fill="url(#goldCrown)"
+    d="M23 16.5L26.5 11.5L31.5 15L36.5 11.5L40 16.5H23Z"
+    fill="#E1D4C2"
+    stroke="#291C0E"
+    stroke-width="1.2"
+    stroke-linejoin="round"
+  />
+  <circle cx="26.5" cy="10" r="1.4" fill="#BEB5A9" />
+  <circle cx="31.5" cy="9.2" r="1.6" fill="#E1D4C2" />
+  <circle cx="36.5" cy="10" r="1.4" fill="#BEB5A9" />
+
+  <!-- Sculpted Staunton Royal Knight Silhouette -->
+  <path
+    d="M22 44C22 35.5 29.5 36.5 28.5 29.5C25 30.8 20.5 32.5 19 29.5C17.5 26.8 21.5 22.2 25.5 21L27 18H33.5C42.5 19.5 46.5 27.5 45.5 44H22Z"
+    fill="#E1D4C2"
+    stroke="#291C0E"
+    stroke-width="1.8"
+    stroke-linejoin="round"
+  />
+  <!-- Knight Eye & Mane Carving -->
+  <circle cx="25.5" cy="24" r="1.6" fill="#291C0E" />
+  <path
+    d="M36.5 22.5C40.5 25.5 42 32 41.5 41"
+    stroke="#6E473B"
+    stroke-width="2"
+    stroke-linecap="round"
   />
 
-  <!-- Royal Crown & Mitre Silhouette -->
+  <!-- Pedestal Collar & Base -->
+  <rect x="19.5" y="44" width="25" height="3.8" rx="1.8" fill="#BEB5A9" stroke="#291C0E" stroke-width="1.5" />
   <path
-    d="M20 23.5L25.5 19.5L32 23L38.5 19.5L44 23.5L41.2 33.5H22.8L20 23.5Z"
-    fill="url(#goldCrown)"
+    d="M16.5 52.5H47.5C47.5 49.2 44.5 47.8 42 47.8H22C19.5 47.8 16.5 49.2 16.5 52.5Z"
+    fill="#E1D4C2"
+    stroke="#291C0E"
+    stroke-width="1.6"
+    stroke-linejoin="round"
   />
-
-  <!-- Crown Jewels / Highlights -->
-  <circle cx="32" cy="26.5" r="1.8" fill="#171411" />
-  <circle cx="26.2" cy="27.2" r="1.4" fill="#171411" />
-  <circle cx="37.8" cy="27.2" r="1.4" fill="#171411" />
-
-  <!-- King Collar -->
-  <rect x="21.5" y="35" width="21" height="3.2" rx="1.6" fill="url(#goldCrown)" />
-
-  <!-- Sculpted Staunton Pillar Body -->
-  <path
-    d="M24.2 39.5H39.8L42.5 47.5H21.5L24.2 39.5Z"
-    fill="url(#goldCrown)"
-  />
-
-  <!-- Double Pedestal Base -->
-  <rect x="18.5" y="49" width="27" height="3.2" rx="1.6" fill="url(#goldCrown)" />
-  <rect x="15.5" y="53.5" width="33" height="4" rx="2" fill="url(#goldCrown)" />
 </svg>

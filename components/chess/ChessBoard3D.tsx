@@ -47,6 +47,8 @@ import {
   Crown,
   Search,
   Navigation,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 
 export type CameraViewPreset = 'white' | 'black' | 'top' | 'cinema' | 'inspection';
@@ -64,6 +66,7 @@ interface ChessBoard3DProps {
   onSquareSelect: (square: string) => void;
   onMoveAttempt: (from: string, to: string) => void;
   onFlipOrientation?: () => void;
+  onSwitchTo2D?: () => void;
   visualSettings?: ArenaVisualSettings;
   onUpdateVisualSettings?: (partial: Partial<ArenaVisualSettings>) => void;
 }
@@ -104,10 +107,10 @@ const PIECE_HITBOX_HEIGHTS: Record<PieceSymbol, number> = {
 };
 
 const QUALITY_LABELS: Record<GraphicsQualityPreset, string> = {
-  low: 'LOW (Hemat/Kentang)',
-  medium: 'MEDIUM',
+  low: 'LOW',
+  medium: 'MED',
   high: 'HIGH',
-  ultra: 'ULTRA (Realistis)',
+  ultra: 'ULTRA',
 };
 
 function squareToWorldXZ(square: string): { x: number; z: number } {
@@ -296,6 +299,7 @@ export default function ChessBoard3D({
   onSquareSelect,
   onMoveAttempt,
   onFlipOrientation,
+  onSwitchTo2D,
   visualSettings = DEFAULT_VISUAL_SETTINGS,
   onUpdateVisualSettings,
 }: ChessBoard3DProps) {
@@ -1825,7 +1829,7 @@ export default function ChessBoard3D({
   };
 
   return (
-    <div className="relative w-full h-full min-h-[420px] bg-[#090706] overflow-hidden select-none rounded-xl border border-[#38251C]">
+    <div className="relative w-full h-full min-h-[420px] bg-[#070E0A] overflow-hidden select-none rounded-xl border border-[#7A9A76]/35">
       {webglFallback || use2DBoard ? (
         render2DFallbackBoard()
       ) : (
@@ -1834,33 +1838,33 @@ export default function ChessBoard3D({
 
       {/* GLB Cathedral & Pieces Loading Indicator */}
       {loadingProgress && !use2DBoard && !webglFallback && (
-        <div className="absolute top-3 left-3 z-20 px-3.5 py-2 rounded-lg bg-[#171310]/95 border border-[#C7A66A]/50 shadow-xl flex items-center gap-3 pointer-events-none">
-          <div className="w-24 h-1.5 bg-[#2B211B] rounded-full overflow-hidden">
+        <div className="absolute top-3 left-3 z-20 px-3.5 py-2 rounded-xl bg-[#0E1B14]/95 border border-[#7A9A76]/45 shadow-xl flex items-center gap-3 pointer-events-none">
+          <div className="w-24 h-1.5 bg-[#192E23] rounded-full overflow-hidden">
             <div
-              className="h-full bg-[#C7A66A] transition-all duration-200"
+              className="h-full bg-[#DFC29B] transition-all duration-200"
               style={{
                 width: `${Math.round((loadingProgress.loaded / loadingProgress.total) * 100)}%`,
               }}
             />
           </div>
-          <span className="text-[11px] font-medium text-[#F2E9DC]/90 whitespace-nowrap">
+          <span className="text-[11px] font-medium text-[#EFE6D5]/90 whitespace-nowrap">
             Memuat 3D GLB ({loadingProgress.loaded}/{loadingProgress.total}):{' '}
-            <strong className="text-[#C7A66A]">{loadingProgress.label}</strong>
+            <strong className="text-[#DFC29B]">{loadingProgress.label}</strong>
           </span>
         </div>
       )}
 
       {/* Top-Left Clear Movement & Selection Status Badge */}
       {!loadingProgress && (lastMove || selectedSquare) && !use2DBoard && (
-        <div className="absolute top-3 left-3 z-20 px-3 py-1.5 rounded-lg bg-[#171310]/90 border border-[#38251C] shadow-lg flex items-center gap-2.5 text-xs text-[#F2E9DC]/90 pointer-events-none">
+        <div className="absolute top-3 left-3 z-20 px-3 py-1.5 rounded-xl bg-[#0E1B14]/92 border border-[#7A9A76]/35 shadow-lg flex items-center gap-2.5 text-xs text-[#EFE6D5]/90 pointer-events-none">
           {selectedSquare ? (
             <span>
               Petak Aktif:{' '}
-              <strong className="font-mono uppercase text-[#38BDF8]">{selectedSquare}</strong>
-              <span aria-hidden="true" className="mx-1.5 text-[#F2E9DC]/40">
+              <strong className="font-mono uppercase text-[#DFC29B]">{selectedSquare}</strong>
+              <span aria-hidden="true" className="mx-1.5 text-[#7A9A76]/60">
                 ·
               </span>
-              <span className="text-[#F2E9DC]/75">
+              <span className="text-[#9BB09D]">
                 {legalMoves.length} langkah tersedia
               </span>
             </span>
@@ -1868,7 +1872,7 @@ export default function ChessBoard3D({
             lastMove && (
               <span>
                 Langkah Terakhir:{' '}
-                <strong className="font-mono uppercase text-[#FBBF24]">
+                <strong className="font-mono uppercase text-[#DFC29B]">
                   {lastMove.from} → {lastMove.to}
                 </strong>
               </span>
@@ -1879,103 +1883,109 @@ export default function ChessBoard3D({
 
       {/* Cinematic Duel Capture Callout Banner */}
       {activeDuelBanner && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-lg bg-[#1D1612] border border-[#C7A66A] shadow-2xl flex items-center gap-2.5 pointer-events-none">
-          <Swords className="w-4 h-4 text-[#C7A66A] shrink-0" />
-          <span className="text-xs font-semibold text-[#F2E9DC] whitespace-nowrap">
-            <strong className="text-[#C7A66A]">
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-xl bg-[#0E1B14]/95 border border-[#DFC29B]/60 shadow-2xl flex items-center gap-2.5 pointer-events-none">
+          <Swords className="w-4 h-4 text-[#DFC29B] shrink-0" />
+          <span className="text-xs font-semibold text-[#EFE6D5] whitespace-nowrap">
+            <strong className="text-[#DFC29B]">
               {CHARACTER_CLASS_NAMES[activeDuelBanner.attackerType]} (
               {activeDuelBanner.attackerColor === 'w' ? 'Putih' : 'Hitam'})
             </strong>{' '}
             mengeliminasi{' '}
-            <strong className="text-[#E7D5B5]">
+            <strong className="text-[#9BB09D]">
               {CHARACTER_CLASS_NAMES[activeDuelBanner.defenderType]}
             </strong>{' '}
-            di petak <span className="font-mono uppercase">{activeDuelBanner.to}</span>!
+            di petak <span className="font-mono uppercase text-[#DFC29B]">{activeDuelBanner.to}</span>!
           </span>
         </div>
       )}
 
-      {/* Collapsible Bottom Control Dock (Zero Viewport Occlusion, No backdrop-filter over WebGL) */}
-      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center max-w-[96vw]">
-        <button
-          type="button"
-          onClick={() => setHudCollapsed((prev) => !prev)}
-          className="px-3 py-1 text-[11px] font-medium tracking-wide text-[#F2E9DC]/80 bg-[#221D19] hover:text-[#F2E9DC] border border-b-0 border-[#38251C] rounded-t-md transition-colors whitespace-nowrap shrink-0"
-        >
-          {hudCollapsed ? '▴ Tampilkan Kontrol Kamera & Karakter' : '▾ Sembunyikan Kontrol'}
-        </button>
-
-        {!hudCollapsed && (
-          <div className="flex items-center gap-1.5 px-3 py-2 bg-[#221D19] border border-[#38251C] rounded-lg shadow-xl overflow-x-auto max-w-full">
+      {/* Ultra-Compact Minimalist Bottom 3D Micro-Pill Dock (Desktop) */}
+      <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center max-w-[98%]">
+        {hudCollapsed ? (
+          <button
+            type="button"
+            onClick={() => setHudCollapsed(false)}
+            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-[#0E1B14]/92 text-[#EFE6D5] border border-[#7A9A76]/40 hover:border-[#DFC29B] shadow-lg transition-all whitespace-nowrap"
+            title="Tampilkan kontrol 3D minimalis"
+          >
+            <ChevronUp className="w-3 h-3 text-[#DFC29B]" />
+            <span>Kontrol 3D</span>
+          </button>
+        ) : (
+          <div className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-full bg-[#0E1B14]/95 border border-[#7A9A76]/40 shadow-[0_10px_28px_rgba(0,0,0,0.85)] overflow-x-auto max-w-full [scrollbar-width:thin] [scrollbar-color:#7A9A76_#0E1B14] [&::-webkit-scrollbar]:h-1 [&::-webkit-scrollbar-track]:bg-[#0E1B14]/90 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#7A9A76]/65 hover:[&::-webkit-scrollbar-thumb]:bg-[#DFC29B] [&::-webkit-scrollbar-thumb]:rounded-full">
+            {/* Compact Camera Presets */}
             <button
               type="button"
               onClick={() => handleSelectCameraPreset(orientation === 'w' ? 'white' : 'black')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors whitespace-nowrap shrink-0 ${
                 cameraPreset === 'white' || cameraPreset === 'black'
-                  ? 'bg-[#C7A66A] text-[#171513]'
-                  : 'text-[#F2E9DC]/80 hover:bg-[#38251C] hover:text-[#F2E9DC]'
+                  ? 'bg-[#DFC29B] text-[#0E1B14] font-bold'
+                  : 'text-[#EFE6D5]/80 hover:bg-[#192E23] hover:text-[#EFE6D5]'
               }`}
-              title="Sudut Pandang Pemain (Player View)"
+              title="Sudut Pandang Pemain"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Sudut Pemain</span>
+              <RotateCcw className="w-3 h-3" />
+              <span>Pemain</span>
             </button>
 
             <button
               type="button"
               onClick={() => handleSelectCameraPreset('top')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors whitespace-nowrap shrink-0 ${
                 cameraPreset === 'top'
-                  ? 'bg-[#C7A66A] text-[#171513]'
-                  : 'text-[#F2E9DC]/80 hover:bg-[#38251C] hover:text-[#F2E9DC]'
+                  ? 'bg-[#DFC29B] text-[#0E1B14] font-bold'
+                  : 'text-[#EFE6D5]/80 hover:bg-[#192E23] hover:text-[#EFE6D5]'
               }`}
-              title="Sudut Pandang Papan Atas (Board View)"
+              title="Sudut Pandang Atas"
             >
-              <Eye className="w-3.5 h-3.5" />
-              <span>Tampak Papan</span>
+              <Eye className="w-3 h-3" />
+              <span>Atas</span>
             </button>
 
             <button
               type="button"
               onClick={() => handleSelectCameraPreset('cinema')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors whitespace-nowrap shrink-0 ${
                 cameraPreset === 'cinema'
-                  ? 'bg-[#C7A66A] text-[#171513]'
-                  : 'text-[#F2E9DC]/80 hover:bg-[#38251C] hover:text-[#F2E9DC]'
+                  ? 'bg-[#DFC29B] text-[#0E1B14] font-bold'
+                  : 'text-[#EFE6D5]/80 hover:bg-[#192E23] hover:text-[#EFE6D5]'
               }`}
-              title="Sudut Ruangan Katedral Sinematik (Cathedral View)"
+              title="Sudut Katedral Sinematik"
             >
-              <Camera className="w-3.5 h-3.5" />
-              <span>Katedral 3D</span>
+              <Camera className="w-3 h-3" />
+              <span>Sinema</span>
             </button>
 
             <button
               type="button"
               onClick={() => handleSelectCameraPreset('inspection')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors whitespace-nowrap shrink-0 ${
                 cameraPreset === 'inspection'
-                  ? 'bg-[#C7A66A] text-[#171513]'
-                  : 'text-[#F2E9DC]/80 hover:bg-[#38251C] hover:text-[#F2E9DC]'
+                  ? 'bg-[#DFC29B] text-[#0E1B14] font-bold'
+                  : 'text-[#EFE6D5]/80 hover:bg-[#192E23] hover:text-[#EFE6D5]'
               }`}
-              title="Inspeksi Detail Karakter GLB (Inspection View)"
+              title="Inspeksi Detail Bidak 3D"
             >
-              <Search className="w-3.5 h-3.5" />
-              <span>Inspeksi Bidak</span>
+              <Search className="w-3 h-3" />
+              <span className="hidden xl:inline">Inspeksi</span>
             </button>
 
+            <span className="w-px h-3.5 bg-[#7A9A76]/25 mx-0.5 shrink-0" aria-hidden="true" />
+
+            {/* Compact 3D Feature Toggles */}
             {!use2DBoard && (
               <button
                 type="button"
                 onClick={() => setShowMoveArrow((prev) => !prev)}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors whitespace-nowrap shrink-0 ${
                   showMoveArrow
-                    ? 'bg-[#38251C] text-[#FBBF24] border border-[#FBBF24]/50'
-                    : 'text-[#F2E9DC]/80 hover:bg-[#38251C] hover:text-[#F2E9DC]'
+                    ? 'bg-[#1A3326] text-[#DFC29B] border border-[#DFC29B]/40'
+                    : 'text-[#EFE6D5]/65 hover:bg-[#192E23] hover:text-[#EFE6D5]'
                 }`}
-                title="Tampilkan / Sembunyikan Panah Jalur Pergerakan Bidak 3D"
+                title={`Panah Jalur: ${showMoveArrow ? 'Aktif' : 'Mati'}`}
               >
-                <Navigation className="w-3.5 h-3.5" />
-                <span>Jalur: {showMoveArrow ? 'Aktif' : 'Mati'}</span>
+                <Navigation className="w-3 h-3" />
+                <span>Jalur</span>
               </button>
             )}
 
@@ -1987,17 +1997,15 @@ export default function ChessBoard3D({
                     pieceStyle: pieceStyle === 'living' ? 'staunton' : 'living',
                   })
                 }
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors whitespace-nowrap shrink-0 ${
                   pieceStyle === 'living'
-                    ? 'bg-[#38251C] text-[#C7A66A] border border-[#C7A66A]/60'
-                    : 'text-[#F2E9DC]/80 hover:bg-[#38251C] hover:text-[#F2E9DC]'
+                    ? 'bg-[#1A3326] text-[#DFC29B] border border-[#DFC29B]/40'
+                    : 'text-[#EFE6D5]/80 hover:bg-[#192E23] hover:text-[#EFE6D5]'
                 }`}
-                title="Beralih antara Karakter Katedral GLB dan Bidak Staunton Klasik"
+                title="Ganti Model Bidak 3D (Karakter GLB / Staunton Klasik)"
               >
-                <Crown className="w-3.5 h-3.5" />
-                <span>
-                  {pieceStyle === 'living' ? 'Bidak: Karakter GLB' : 'Bidak: Staunton Klasik'}
-                </span>
+                <Crown className="w-3 h-3" />
+                <span>{pieceStyle === 'living' ? 'GLB' : 'Klasik'}</span>
               </button>
             )}
 
@@ -2013,30 +2021,27 @@ export default function ChessBoard3D({
                       : 'on';
                   onUpdateVisualSettings({ cinematicCaptures: nextMode });
                 }}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium text-[#F2E9DC]/80 hover:bg-[#38251C] hover:text-[#F2E9DC] transition-colors whitespace-nowrap shrink-0"
-                title="Pengaturan Kamera & Animasi Duel saat Menangkap Bidak"
-              >
-                <Swords className="w-3.5 h-3.5 text-[#C7A66A]" />
-                <span>
-                  Duel:{' '}
-                  {visualSettings.cinematicCaptures === 'on'
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                  visualSettings.cinematicCaptures !== 'off'
+                    ? 'bg-[#1A3326] text-[#EFE6D5]'
+                    : 'text-[#EFE6D5]/60 hover:bg-[#192E23]'
+                }`}
+                title={`Animasi Duel: ${
+                  visualSettings.cinematicCaptures === 'on'
                     ? 'Sinematik'
                     : visualSettings.cinematicCaptures === 'reduced'
                     ? 'Ringkas'
-                    : 'Mati'}
-                </span>
-              </button>
-            )}
-
-            {onFlipOrientation && (
-              <button
-                type="button"
-                onClick={onFlipOrientation}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium text-[#F2E9DC]/80 hover:bg-[#38251C] hover:text-[#F2E9DC] transition-colors whitespace-nowrap shrink-0"
-                title="Putar Sisi Papan (Putih / Hitam)"
+                    : 'Mati'
+                }`}
               >
-                <FlipHorizontal2 className="w-3.5 h-3.5" />
-                <span>Sisi: {orientation === 'w' ? 'Putih' : 'Hitam'}</span>
+                <Swords className="w-3 h-3 text-[#DFC29B]" />
+                <span>
+                  {visualSettings.cinematicCaptures === 'on'
+                    ? 'Duel'
+                    : visualSettings.cinematicCaptures === 'reduced'
+                    ? 'Ringkas'
+                    : 'Off'}
+                </span>
               </button>
             )}
 
@@ -2048,30 +2053,54 @@ export default function ChessBoard3D({
                   const nextIdx = (order.indexOf(visualSettings.graphicsQuality) + 1) % order.length;
                   onUpdateVisualSettings({ graphicsQuality: order[nextIdx] });
                 }}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors whitespace-nowrap shrink-0 ${
                   visualSettings.graphicsQuality === 'ultra'
-                    ? 'bg-[#38251C] text-[#FBBF24] border border-[#FBBF24]/60'
-                    : 'text-[#F2E9DC]/80 hover:bg-[#38251C] hover:text-[#F2E9DC]'
+                    ? 'bg-[#4E392B] text-[#DFC29B] border border-[#DFC29B]/50'
+                    : 'text-[#EFE6D5]/80 hover:bg-[#192E23] hover:text-[#EFE6D5]'
                 }`}
-                title="Kualitas Grafis 3D (Default: LOW untuk Perangkat Kentang, ULTRA untuk Realistis Sinematik)"
+                title="Ubah Kualitas Grafis 3D (LOW / MED / HIGH / ULTRA)"
               >
-                <Sparkles className="w-3.5 h-3.5 text-[#C7A66A]" />
-                <span>Grafis: {QUALITY_LABELS[visualSettings.graphicsQuality]}</span>
+                <Sparkles className="w-3 h-3 text-[#DFC29B]" />
+                <span>{QUALITY_LABELS[visualSettings.graphicsQuality]}</span>
+              </button>
+            )}
+
+            {onFlipOrientation && (
+              <button
+                type="button"
+                onClick={onFlipOrientation}
+                className="p-1 rounded-full text-[#EFE6D5]/80 hover:bg-[#192E23] hover:text-[#EFE6D5] transition-colors shrink-0"
+                title={`Putar Papan (Sisi: ${orientation === 'w' ? 'Putih' : 'Hitam'})`}
+                aria-label="Putar Papan"
+              >
+                <FlipHorizontal2 className="w-3.5 h-3.5" />
               </button>
             )}
 
             <button
               type="button"
-              onClick={() => setUse2DBoard((prev) => !prev)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
-                use2DBoard
-                  ? 'bg-[#C7A66A] text-[#171513]'
-                  : 'text-[#F2E9DC]/80 hover:bg-[#38251C] hover:text-[#F2E9DC]'
-              }`}
-              title="Beralih antara Papan 3D dan Papan 2D Klasik"
+              onClick={() => {
+                if (onSwitchTo2D) {
+                  onSwitchTo2D();
+                } else {
+                  setUse2DBoard((prev) => !prev);
+                }
+              }}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#DFC29B] text-[#0E1B14] hover:bg-[#EAD3B3] transition-colors whitespace-nowrap shrink-0"
+              title="Beralih ke Papan Catur 2D"
             >
-              <Grid className="w-3.5 h-3.5" />
-              <span>{use2DBoard ? '2D Aktif' : '2D'}</span>
+              <Grid className="w-3 h-3" />
+              <span>2D</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setHudCollapsed(true)}
+              className="p-1 rounded-full text-[#9BB09D] hover:bg-[#192E23] hover:text-[#EFE6D5] transition-colors shrink-0"
+              title="Sembunyikan bar kontrol 3D"
+              aria-label="Sembunyikan bar kontrol 3D"
+            >
+              <ChevronDown className="w-3.5 h-3.5" />
             </button>
           </div>
         )}
