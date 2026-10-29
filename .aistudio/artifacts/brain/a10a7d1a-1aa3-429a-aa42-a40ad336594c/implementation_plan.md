@@ -1,110 +1,79 @@
-# Ultra-Realistic Living 3D Chess Arena — Rencana Peningkatan Visual, Karakter Hidup, Duel Sinematik & Bot AI
+# Rencana Implementasi: Optimasi Mobile 2D / Desktop 3D, Tata Letak Sederhana, Panduan Pengguna & Palet Warna Hangat
 
-Meningkatkan **Classic Chess 3D** menjadi arena catur 3D sinematik yang hidup (*Grand Chess Chamber*) dengan 32 karakter fantasi realistis berartikulasi yang memiliki animasi *idle*, berjalan, menyerang, dan reaksi skak/kalah, sistem duel *capture* sinematik, mode latihan melawan Bot AI berbasis Web Worker (lengkap dengan *Hint* & evaluasi posisi), serta pengaturan kualitas grafis adaptif (`Low`, `Medium`, `High`, `Ultra`).
-
-### User Review & Critical Decisions
-
-> [!IMPORTANT]
-> Berdasarkan konfirmasi Anda pada tahap klarifikasi, berikut adalah keputusan produk utama untuk pembaruan ini:
-
-- **Confirmed Decision 1 — Cakupan Peningkatan Terpadu**: Mengimplementasikan secara utuh **Ruangan 3D Grand Chess Chamber**, **Karakter Bidak Hidup Beranimasi**, **Animasi Duel Capture & Kamera Sinematik**, **Mode Latihan Bot AI (Web Worker + Hint & Evaluasi)**, serta **Penyempurnaan Room Privat/Publik** dengan tetap mempertahankan aturan legal `chess.js` dan sinkronisasi `Socket.IO` yang sudah berjalan.
-- **Confirmed Decision 2 — Karakter Hidup sebagai Utama + Toggle Staunton Klasik**: Menampilkan **Karakter Hidup 3D** (Kesatria Raja, Ratu Penyihir/Pemimpin, Golem Benteng, Pendeta Mistik Gajah, Kavaleri Kuda, dan Infanteri Pion) sebagai model utama, disertai tombol pengalih cepat ke **Bidak Kayu Staunton Klasik** kapan saja di HUD.
-- **Confirmed Decision 3 — Kamera & Duel Capture Sinematik Terukur (~1.2 Detik)**: Saat terjadi langkah penangkapan bidak (*capture*) yang sah, karakter penyerang menghampiri target dan memainkan koreografi serangan singkat dengan fokus kamera sinematik (~1.2 detik) sebelum kembali ke sudut pandang pemain. Pengguna dapat mengubah mode ini ke **On**, **Reduced** (animasi serangan tanpa menggeser kamera), atau **Off** (perpindahan instan untuk catur cepat).
-
----
-
-### 1. Overview & Core Concept
-
-- **What It Does**: Mengubah area sekitar papan menjadi ruangan klub/perpustakaan catur kerajaan yang utuh (*Grand Chess Chamber*), menghidupkan setiap bidak catur sebagai prajurit dan penguasa berartikulasi penuh yang bernapas, melangkah, melompat, dan berduel ketika memakan bidak lawan, serta menyediakan lawan **Bot AI** dengan berbagai tingkat kesulitan dan fitur pelatih (*Hint*, *Undo*, & *Position Evaluation Bar*).
-- **Target Audience / Persona**: Pemain catur yang menginginkan imersi visual setara game strategi fantasi AAA langsung di browser, sekaligus membutuhkan platform yang tetap mematuhi 100% aturan catur standar FIDE baik saat bermain melawan teman secara *real-time* maupun saat berlatih melawan AI.
-- **Key Value**: Memisahkan secara tegas **State Logis Catur (`chess.js` & Server Authoritative)** dari **Representasi Visual & Animasi (`CharacterAnimator` & `CaptureSequence`)**, sehingga imersi sinematik tidak pernah mengorbankan keakuratan aturan, jam pertandingan, atau sinkronisasi jaringan.
+## 1. Tujuan & Konteks Masalah
+Berdasarkan hasil analisis PageSpeed Insights dan kebutuhan pengguna:
+1. **Performa & Kompatibilitas Mobile**: Memuat engine 3D (Three.js, WebGL, geometri 3D) secara langsung di semua perangkat membuat beban JavaScript awal tinggi (Total Blocking Time besar) dan kurang nyaman di layar HP/Tablet.
+2. **Pemisahan Visual 2D & 3D**:
+   - **Mobile & Tablet (`< 1024px`)**: Otomatis menggunakan **Papan Catur 2D SVG Ringan (`ChessBoard2D`)** tanpa memuat bundle Three.js sama sekali agar cepat, responsif, dan hemat baterai/memori.
+   - **Desktop (`>= 1024px`)**: Otomatis menampilkan **Papan Catur 3D (`ChessBoard3D`)** melalui *dynamic import* (`next/dynamic`, `ssr: false`), dilengkapi **tombol pengalih 2D / 3D** agar pengguna desktop/laptop juga bebas beralih ke mode 2D kapan saja.
+3. **Sistem Palet 5 Warna Solid (Tanpa Gradasi) + Tombol Tema Terang & Gelap Hangat**:
+   Menggunakan kelima warna dari referensi gambar secara menyeluruh dan saling melengkapi (**tanpa gradasi CSS**):
+   - `#291C0E` (*Deep Espresso*)
+   - `#6E473B` (*Roasted Chestnut*)
+   - `#A78D78` (*Warm Taupe*)
+   - `#BEB5A9` (*Soft Warm Stone*)
+   - `#E1D4C2` (*Warm Cream*)
+4. **Tata Letak Sederhana & Panduan Pengguna Interaktif**:
+   - Menyederhanakan navigasi dan panel kontrol agar bersih, rapi, dan mudah dipahami di layar HP, tablet, maupun desktop.
+   - Menambahkan **Panel Panduan Ringkas** di layar utama serta **Pop-up Panduan Interaktif Langkah demi Langkah** untuk membantu pemain baru maupun pemain yang ingin bermain bersama teman.
 
 ---
 
-### 2. User Experience & Visual Design
+## 2. Desain Sistem Warna (5 Warna Solid Saling Melengkapi, Tanpa Gradasi)
 
-#### A. Arsitektur Ruangan 3D (*Grand Chess Chamber*)
-- **Meja Pedestal & Lantai**: Papan catur berada di atas meja kayu Walnut berukir di tengah ruangan dengan lantai marmer gelap dan parket kayu yang memiliki refleksi halus.
-- **Dinding Perpustakaan, Pilar & Jendela**: Dikelilingi dinding panel kayu Walnut gelap, pilar klasik beralur (*fluted columns*), rak buku perpustakaan (menggunakan `InstancedMesh` untuk efisiensi *draw call*), serta jendela tinggi di sisi ruangan yang memancarkan berkas cahaya matahari hangat (*sunbeams*).
-- **Chandelier, Lampu Meja & Partikel Debu**: Lampu gantung kristal/kuningan (*chandelier*) di atas arena dan lampu meja hangat di sudut, dilengkapi partikel debu halus (*floating dust motes*) yang berkilau terkena cahaya pada preset kualitas `High` dan `Ultra`.
+Seluruh komponen akan menggunakan variabel CSS / kelas warna solid dari kelima warna palet dengan tombol **Ganti Tema (Terang Hangat / Gelap Hangat)** di bilah atas:
 
-#### B. Desain Faksi & Karakter Bidak Hidup (6 Kelas Karakter Berartikulasi)
-- **Identitas Dua Pasukan**:
-  - **Pasukan Putih (Ivory & Royal Gold)**: Armor gading mengilap (`#F4EBDC`), pelat perak terang (`#D8DEE9`), dan jubah/aksen emas kerajaan (`#C7A66A`).
-  - **Pasukan Hitam (Obsidian & Crimson Iron)**: Armor besi obsidian gelap (`#231F20`), baja tempa (`#3B322C`), dan jubah/aksen merah marun kerajaan (`#8C2D2D`).
-- **Siluet & Anatomi 6 Jenis Karakter**:
-  1. **Raja (Royal Monarch Knight)**: Tubuh lapis baja kerajaan, mahkota emas/besi menyatu di helm, jubah belakang yang bergerak mengikuti napas, dan pedang agung (*greatsword*) dua tangan.
-  2. **Ratu (Arcane Sovereign / High Commander)**: Siluet anggun dengan jubah kerajaan bertingkat, mahkota runcing, tongkat kerajaan bercahaya (*scepter*) & bilah energi, serta partikel aura halus.
-  3. **Benteng (Tower Golem / Siege Guardian)**: Tubuh raksasa berlapis baja tebal dengan bahu berbentuk menara benteng (*crenellated pauldrons*), perisai menara, dan palu godam berat yang menimbulkan efek getaran/debu saat menghantam.
-  4. **Gajah (Mystic War Cleric /Hierophant)**: Jubah tinggi ramping dengan kerah mitre liturgis, staf tombak diagonal bercahaya, dan gerakan meluncur yang tenang.
-  5. **Kuda (Cavalry Vanguard Knight)**: Prajurit kavaleri dengan helm/zirah kepala kuda perang yang ikonik, tombak kavaleri (*lance*) & perisai, serta animasi lompatan busur tinggi (*leap charge*) yang melompati karakter lain pada pola langkah L.
-  6. **Pion (Infantry Footman)**: Prajurit infanteri kompak dengan helm ketopong, perisai bundar, dan tombak/pedang pendek, lengkap dengan efek transformasi cahaya saat mencapai baris ke-8 (**Promosi Pion**).
-
-#### C. Empat Sudut Pandang Kamera & Pengaturan Visual
-- **Player View**: Sudut pandang ergonomis dari belakang pasukan pemain.
-- **Board View**: Sudut pandang lebih tinggi untuk membaca taktik seluruh petak secara jernih.
-- **Inspection View**: Mode orbit bebas terukur untuk mengamati detail karakter dan ruangan 3D dari dekat.
-- **Cinematic View**: Kamera otomatis yang meluncur mendekati petak pertarungan selama ~1.2 detik saat terjadi *capture* (dapat diatur ke `On`, `Reduced`, atau `Off`).
-- **Panel Pengaturan Visual & Audio**:
-  - *Graphics Quality*: `Low`, `Medium`, `High`, `Ultra` (mengatur *pixel ratio*, *shadow map*, detail geometri ruangan, dan partikel debu).
-  - *Model Style*: `Living Characters (Karakter Hidup)` vs `Classic Staunton (Kayu Klasik)`.
-  - *Cinematic Captures*: `On`, `Reduced`, `Off`.
-  - *Sound & Ambience*: Efek suara langkah/pedang/armor dan suara atmosfer ruangan (*Ambient Sound*) yang disintesis secara prosedural via Web Audio API.
+| Elemen UI | Tema Terang Hangat (Default) | Tema Gelap Hangat |
+| :--- | :--- | :--- |
+| **Latar Utama (Canvas)** | `#E1D4C2` (Warm Cream) | `#291C0E` (Deep Espresso) |
+| **Panel & Kartu Utama** | `#BEB5A9` (Soft Warm Stone) | `#6E473B` (Roasted Chestnut) |
+| **Sub-Panel & Pembatas (Border)** | `#A78D78` (Warm Taupe) | `#A78D78` (Warm Taupe) |
+| **Aksen Interaktif & Tombol Aktif** | `#6E473B` (Roasted Chestnut) | `#E1D4C2` (Warm Cream) |
+| **Teks Utama & Kontras Tinggi** | `#291C0E` (Deep Espresso) | `#E1D4C2` (Warm Cream) |
+| **Teks Sekunder & Label** | `#6E473B` (Roasted Chestnut) | `#BEB5A9` (Soft Warm Stone) |
+| **Petak Papan Catur 2D** | Terang: `#E1D4C2` · Gelap: `#A78D78` · Bingkai: `#291C0E` & `#6E473B` | Terang: `#E1D4C2` · Gelap: `#A78D78` · Bingkai: `#291C0E` & `#BEB5A9` |
 
 ---
 
-### 3. Key Product Decisions & Trade-Offs
+## 3. Arsitektur & Komponen yang Akan Dibuat / Dimodifikasi
 
-- **Decision 1: Sistem Karakter Hierarkis Berartikulasi (`THREE.Group` Skeletal Rig) + Dukungan Adapter GLB**
-  - *Chosen Approach*: Membangun setiap karakter hidup sebagai rig artikulasi multi-sendi (`Root -> Pelvis -> Torso -> Head / LeftArm+Shield / RightArm+Weapon / Cape / LeftLeg / RightLeg`) menggunakan geometri PBR prosedural berdetail tinggi yang digerakkan oleh `CharacterAnimator` (*state machine* `idle`, `walk`, `leap`, `attack`, `hit_reaction`, `check_alert`, `defeat`, `victory`, `promote`), sembari menyediakan *loader pipeline* opsional untuk aset `.glb` kustom.
-  - *Why*: Menjamin **0% risiko gagal muat (zero-404)**, memastikan ke-6 jenis bidak langsung tampil dengan anatomi, senjata, dan animasi hidup yang nyata di browser tanpa bergantung pada unduhan file eksternal berukuran puluhan megabyte, serta tetap menjaga *frame rate* yang mulus untuk 32 karakter sekaligus.
-- **Decision 2: Pemisahan Ketat State Permainan dan Sekuens Duel Capture (`CaptureSequence`)**
-  - *Chosen Approach*: Saat langkah *capture* divalidasi oleh `chess.js` (lokal/bot) atau dikonfirmasi server (`game:state` di multiplayer), state logis catur langsung diperbarui secara otoritatif, sementara *renderer* 3D menjalankan antrean transisi visual non-destruktif (`move -> attack -> hit_reaction + defeat -> settle`) selama ~1.2 detik. Jika pemain melangkah cepat di tengah animasi, animasi sebelumnya langsung diselesaikan (*fast-forward*) ke posisi petak tujuan.
-  - *Why*: Memastikan animasi pertarungan tidak pernah mengunci input pemain, tidak mengubah giliran, dan tidak menyebabkan *desync* pada pertandingan *blitz/bullet*.
-- **Decision 3: Engine Bot AI & Analisis Taktis melalui Web Worker**
-  - *Chosen Approach*: Menjalankan perhitungan langkah Bot AI dan evaluasi posisi di dalam **Web Worker** terpisah (`bot-worker.ts`) dengan 5 tingkat kesulitan terukur (*Beginner*, *Club Player*, *Tactician*, *Master*, *Grandmaster Engine*), fitur **Petunjuk Langkah (Hint)** beserta alasan taktis singkat, dan **Evaluation Bar** tanpa pernah membekukan *main thread* rendering 3D.
-  - *Why*: Menjaga animasi *idle* karakter dan rotasi kamera tetap berjalan mulus saat AI sedang menghitung langkah.
+### A. Komponen Baru: `components/chess/ChessBoard2D.tsx`
+- Papan catur 2D berbasis SVG & CSS Grid yang sangat ringan (0 KB ketergantungan 3D).
+- **Fitur**:
+  - Ikon bidak catur Staunton 2D vektor (SVG) dengan kontras tegas: Bidak Putih (`#E1D4C2` dengan garis tegas `#291C0E`) dan Bidak Hitam (`#291C0E` dengan detail aksen `#BEB5A9`).
+  - Mendukung klik/sentuh (*tap-to-move*) dan seret (*drag-and-drop*) yang ramah layar sentuh HP/Tablet (`touch-action: manipulation`).
+  - Indikator petak terpilih, titik langkah sah (*legal moves*), sorotan langkah terakhir, saran taktis (*hint*), dan peringatan Raja sedang Skak (*Check*).
+  - Koordinat baris (`1–8`) dan kolom (`a–h`) yang otomatis menyesuaikan orientasi papan (Putih/Hitam) serta tombol putar papan.
+
+### B. Komponen Baru: `components/game/UserGuideModal.tsx`
+- Menyediakan **2 bentuk panduan** sesuai pilihan pengguna:
+  1. **Kartu Panduan Ringkas (`QuickGuideCard`)** di layar utama: menampilkan 4 poin singkat cara bermain (Pilih Mode, Gerakkan Bidak, Gunakan Hint AI, dan Undang Teman di Room Online) beserta tombol **"Buka Panduan Lengkap"**.
+  2. **Pop-up Interaktif Langkah demi Langkah (`UserGuideModal`)**: panduan visual bertahap (4 langkah dengan navigasi *Sebelumnya / Selanjutnya*) yang menjelaskan:
+     - **Langkah 1**: Cara Menggerakkan Bidak & Indikator Petak (2D & 3D).
+     - **Langkah 2**: Bermain Melawan Bot AI & Membaca Evaluasi / Hint.
+     - **Langkah 3**: Bermain Online Bersama Teman (Buat Room, Bagikan Kode, Terima Lawan).
+     - **Langkah 4**: Aturan Khusus FIDE (Rokade, Promosi Pion, En Passant, Klaim Remis) & Pengaturan Tampilan (2D/3D & Tema).
+
+### C. Optimasi & Penyederhanaan: `components/game/ClassicChessApp.tsx`
+- **Lazy Loading 3D**: Mengubah import `ChessBoard3D` menjadi `dynamic(() => import('../chess/ChessBoard3D'), { ssr: false })` sehingga kode Three.js hanya diunduh ketika mode 3D aktif di perangkat Desktop.
+- **Deteksi Perangkat Otomatis + Opsi Beralih di Desktop**:
+  - Saat dibuka di HP/Tablet (`< 1024px`), otomatis menggunakan tampilan **2D**.
+  - Saat dibuka di Desktop (`>= 1024px`), otomatis menggunakan tampilan **3D** dengan tombol pengalih cepat **`Mode 2D / Mode 3D`** di bilah kontrol papan.
+- **Tombol Tema Terang & Gelap Hangat**: Menyediakan tombol pengalih tema (`Terang Hangat` / `Gelap Hangat`) yang menerapkan kelima warna palet secara konsisten di seluruh halaman.
+- **Tata Letak Responsif yang Lebih Sederhana**:
+  - Di Mobile & Tablet: Papan catur 2D tampil proporsional (`aspect-square`) di bagian atas tanpa terpotong, diikuti bar pemain yang ringkas, pemilih mode (Bot AI / Room Online / Latihan), panduan singkat, dan riwayat langkah.
+  - Di Desktop: Tata letak 2 kolom bersih (Papan Catur 3D/2D di kiri, Panel Mode + Panduan Ringkas + Riwayat Langkah di kanan).
+
+### D. Penyesuaian Warna & Kesederhanaan Komponen Pendukung
+- `components/game/PlayerClockBar.tsx`: Menyesuaikan warna bar pemain, jam catur, dan indikator giliran menggunakan 5 warna palet solid (`#291C0E`, `#6E473B`, `#A78D78`, `#BEB5A9`, `#E1D4C2`).
+- `components/game/MoveHistoryPanel.tsx`: Menyesuaikan tabel notasi langkah dan tombol aksi (Undo, Menyerah, Remis) dengan warna palet baru dan tata letak lebih bersih.
+- `components/game/RoomLobbyAndChatPanel.tsx`: Menyesuaikan lobi multiplayer dan ruang tunggu agar selaras dengan palet 5 warna solid tanpa mengubah logika sinkronisasi room yang sudah berjalan stabil.
+- `components/chess/PromotionModal.tsx` & `app/globals.css` & `app/layout.tsx`: Menyelaraskan variabel warna tema terang/gelap hangat dan memperbaiki meta viewport/performa halaman.
 
 ---
 
-### 4. Technical Architecture & Data Strategy *(Technical Reference)*
-
-#### Architecture & Animation Pipeline Diagram
-
-```text
-┌────────────────────────────────────────────────────────────────────────────────────┐
-│                       CLASSIC CHESS 3D — LIVING ARENA CLIENT                       │
-│                                                                                    │
-│  ┌────────────────────────────────────────┐  ┌──────────────────────────────────┐  │
-│  │        3D Arena Viewport (Three.js)    │  │   Unified HUD & Mode Controllers │  │
-│  │  • GrandChessChamber (Walls, Pillars,  │  │  • Mode: Local / Bot AI / Online │  │
-│  │    Window Sunbeams, Chandelier, Dust)  │  │  • Bot Difficulty, Hint & Eval   │  │
-│  │  • ChessBoard3D (Walnut/Maple Pedestal)│  │  • Private/Public Room + Link    │  │
-│  │  • 32 LivingChessPiece / Staunton Mesh │  │  • Graphics & Capture Settings   │  │
-│  └───────────────────┬────────────────────┘  └─────────────────┬────────────────┘  │
-│                      │                                         │                   │
-│                      ▼                                         ▼                   │
-│  ┌────────────────────────────────────────┐  ┌──────────────────────────────────┐  │
-│  │   CharacterAnimator & CaptureSequence  │  │   Game State & Worker Bridges    │  │
-│  │  • States: idle → walk/leap → attack   │  │  • Authoritative Socket.IO Sync  │  │
-│  │    → hit_reaction → defeat / promote   │  │  • Web Worker AI Engine & Hint   │  │
-│  │  • CinematicCamera (Player/Board/Duel) │  │  • Procedural Combat & Room SFX  │  │
-│  └────────────────────────────────────────┘  └──────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-#### Matriks Preset Kualitas Grafis (`GraphicsSettings`)
-
-| Preset | Pixel Ratio | Bayangan (Shadows) | Detail Ruangan 3D & Partikel | Animasi Duel Capture |
-| :--- | :--- | :--- | :--- | :--- |
-| **Low** | `1.0` | Nonaktif | Meja & Papan Inti, tanpa partikel debu | Instan / Ringkas |
-| **Medium** | `min(dpr, 1.25)` | Shadow Map `1024px` | Ruangan Penuh + Pencahayaan Klub | Aktif (Tanpa Geser Kamera) |
-| **High** | `min(dpr, 1.75)` | PCF Soft Shadow `1024px` | Ruangan Penuh + Chandelier + Debu Halus | Aktif Sinematik (~1.2 dtk) |
-| **Ultra** | `min(dpr, 2.0)` | PCF Soft Shadow `2048px` | Detail Maksimum + Sunbeams + Partikel Penuh | Aktif Sinematik Penuh |
-
-#### Penyempurnaan Room Multiplayer & Mode Bot AI
-- **Visibilitas & Siklus Hidup Room (`Private` vs `Public`)**:
-  - Pembuat room dapat memilih **Room Privat** (hanya dapat dimasuki via kode 6 karakter atau tautan undangan `?room=KODE` dan disembunyikan dari daftar lobi publik) atau **Room Publik** (tampil di daftar lobi terbuka).
-  - Pemilik room dapat membatalkan room sebelum pertandingan dimulai (`room:cancel`), dan room yang tidak aktif otomatis kedaluwarsa.
-- **Mode Latihan Bot AI (`Play vs Bot`)**:
-  - Pilihan warna (`Putih`, `Hitam`, `Acak`), 5 tingkat kesulitan dengan parameter kedalaman dan waktu pikir yang transparan, tombol **Minta Petunjuk (Hint)** yang menyorot langkah terbaik di papan 3D beserta penjelasan taktisnya (misal: *"Mengamankan petak pusat & mengancam bidak lawan"*), **Evaluation Bar** (keunggulan Putih/Hitam dalam satuan pion), serta **Review & Undo** langkah latihan.
+## 4. Tahapan Verifikasi
+1. Memastikan tidak ada penggunaan warna gradasi (`bg-gradient-*`) pada antarmuka utama dan kelima warna (`#291C0E`, `#6E473B`, `#A78D78`, `#BEB5A9`, `#E1D4C2`) berpadu secara solid di Tema Terang maupun Tema Gelap.
+2. Memastikan tampilan Mobile/Tablet (`< 1024px`) merender `ChessBoard2D` secara instan tanpa mengunduh bundle Three.js, serta tampilan Desktop (`>= 1024px`) merender `ChessBoard3D` dengan tombol ganti ke `2D`.
+3. Menguji Panel Panduan Ringkas dan Pop-up Panduan Interaktif Langkah demi Langkah.
+4. Menjalankan pemeriksaan tipe dan build produksi (`lint_applet` dan `compile_applet`) untuk memastikan tidak ada error dan performa optimal.

@@ -16,6 +16,7 @@ interface PlayerClockBarProps {
   materialAdvantage: number;
   clocks: ClockSnapshot | null;
   roleBadge?: string;
+  themeMode?: 'light' | 'dark';
 }
 
 const CAPTURED_UNICODE: Record<PieceColor, Record<PieceSymbol, string>> = {
@@ -48,6 +49,7 @@ export default function PlayerClockBar({
   materialAdvantage,
   clocks,
   roleBadge,
+  themeMode = 'dark',
 }: PlayerClockBarProps) {
   const [liveRemainingMs, setLiveRemainingMs] = useState<number | null>(null);
 
@@ -78,22 +80,27 @@ export default function PlayerClockBar({
   // Captured pieces shown next to this player are the opponent's color pieces they captured
   const capturedPieceColor: PieceColor = color === 'w' ? 'b' : 'w';
   const isLowTime = Boolean(clocks && !clocks.isUnlimited && displayMs < 20000 && displayMs > 0);
+  const isLight = themeMode === 'light';
 
   return (
     <div
-      className={`flex items-center justify-between gap-4 px-4 py-2.5 rounded-lg border transition-colors ${
-        isTurn
-          ? 'bg-[#2A221C] border-[#C7A66A]'
-          : 'bg-[#221D19] border-[#38251C]'
+      className={`flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl border-2 transition-colors ${
+        isLight
+          ? isTurn
+            ? 'bg-[#BEB5A9] border-[#291C0E] text-[#291C0E]'
+            : 'bg-[#BEB5A9] border-[#A78D78] text-[#291C0E]'
+          : isTurn
+          ? 'bg-[#6E473B] border-[#E1D4C2] text-[#E1D4C2]'
+          : 'bg-[#6E473B] border-[#A78D78] text-[#E1D4C2]'
       }`}
     >
       {/* Left: Player identity, piece color swatch, captured pieces */}
       <div className="flex items-center gap-3 min-w-0">
         <div
-          className={`w-7 h-7 rounded-md flex items-center justify-center text-base font-bold shrink-0 border ${
+          className={`w-8 h-8 rounded-lg flex items-center justify-center text-base font-bold shrink-0 border-2 ${
             color === 'w'
-              ? 'bg-[#F2E9DC] text-[#171513] border-[#C7A66A]'
-              : 'bg-[#171513] text-[#F2E9DC] border-[#79543A]'
+              ? 'bg-[#E1D4C2] text-[#291C0E] border-[#6E473B]'
+              : 'bg-[#291C0E] text-[#E1D4C2] border-[#A78D78]'
           }`}
           title={color === 'w' ? 'Pemain Putih' : 'Pemain Hitam'}
         >
@@ -101,55 +108,79 @@ export default function PlayerClockBar({
         </div>
 
         <div className="min-w-0">
-          <div className="flex items-center gap-2 text-sm font-semibold text-[#F2E9DC]">
-            <span className="truncate max-w-[160px] sm:max-w-[220px]">{displayName}</span>
+          <div className="flex items-center gap-2 text-sm font-bold">
+            <span className="truncate max-w-[150px] sm:max-w-[230px]">{displayName}</span>
             {typeof rating === 'number' && (
-              <span className="text-xs font-normal text-[#B5A695] font-mono tabular-nums">
+              <span
+                className={`text-xs font-normal font-mono tabular-nums ${
+                  isLight ? 'text-[#6E473B]' : 'text-[#BEB5A9]'
+                }`}
+              >
                 · {rating}
               </span>
             )}
             {roleBadge && (
-              <span className="text-xs font-normal text-[#C7A66A] whitespace-nowrap">
-                · {roleBadge}
+              <span
+                className={`px-1.5 py-0.5 rounded text-[11px] font-semibold whitespace-nowrap border ${
+                  isLight
+                    ? 'bg-[#291C0E] text-[#E1D4C2] border-[#6E473B]'
+                    : 'bg-[#291C0E] text-[#E1D4C2] border-[#A78D78]'
+                }`}
+              >
+                {roleBadge}
               </span>
             )}
             {isMultiplayer && (
               <span
-                className="inline-flex items-center gap-1 text-xs font-normal text-[#B5A695]"
+                className="inline-flex items-center gap-1 text-xs font-normal"
                 title={connected ? 'Terhubung ke room' : 'Terputus sementara'}
               >
                 {connected ? (
-                  <Wifi className="w-3.5 h-3.5 text-[#C7A66A]" />
+                  <Wifi className="w-3.5 h-3.5" />
                 ) : (
-                  <WifiOff className="w-3.5 h-3.5 text-[#D9534F]" />
+                  <WifiOff className="w-3.5 h-3.5 opacity-60" />
                 )}
               </span>
             )}
           </div>
 
           {/* Captured pieces & material diff */}
-          <div className="flex items-center gap-1.5 text-xs text-[#B5A695] min-h-[18px]">
+          <div className="flex items-center gap-1.5 text-xs min-h-[18px]">
             {capturedPieces.length > 0 ? (
-              <span className="tracking-tight text-sm leading-none text-[#E7D5B5]">
+              <span
+                className={`tracking-tight text-sm leading-none ${
+                  isLight ? 'text-[#291C0E]' : 'text-[#E1D4C2]'
+                }`}
+              >
                 {capturedPieces.map((p, idx) => (
                   <span key={`${p}-${idx}`}>{CAPTURED_UNICODE[capturedPieceColor][p]}</span>
                 ))}
               </span>
             ) : (
-              <span className="text-[11px] text-[#B5A695]/60">
+              <span
+                className={`text-[11px] ${
+                  isLight ? 'text-[#6E473B]' : 'text-[#BEB5A9]'
+                }`}
+              >
                 {color === 'w' ? 'Sisi Putih' : 'Sisi Hitam'}
               </span>
             )}
 
             {materialAdvantage > 0 && (
-              <span className="font-mono tabular-nums text-xs font-semibold text-[#C7A66A]">
+              <span
+                className={`px-1.5 py-0.2 rounded font-mono tabular-nums text-[11px] font-bold ${
+                  isLight
+                    ? 'bg-[#6E473B] text-[#E1D4C2]'
+                    : 'bg-[#E1D4C2] text-[#291C0E]'
+                }`}
+              >
                 +{materialAdvantage}
               </span>
             )}
 
             {inCheck && (
-              <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#D9534F] ml-1">
-                <ShieldAlert className="w-3.5 h-3.5" />
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-bold bg-[#291C0E] text-[#E1D4C2] border border-[#E1D4C2] ml-1">
+                <ShieldAlert className="w-3 h-3" />
                 <span>SKAK</span>
               </span>
             )}
@@ -158,27 +189,39 @@ export default function PlayerClockBar({
       </div>
 
       {/* Right: Turn indicator & Chess Clock */}
-      <div className="flex items-center gap-3 shrink-0">
+      <div className="flex items-center gap-2.5 shrink-0">
         {isTurn && (
-          <span className="hidden sm:inline-block text-xs font-medium text-[#C7A66A] whitespace-nowrap">
-            Giliran Melangkah
+          <span
+            className={`hidden sm:inline-block px-2 py-0.5 rounded text-xs font-semibold whitespace-nowrap ${
+              isLight
+                ? 'bg-[#A78D78] text-[#291C0E]'
+                : 'bg-[#A78D78] text-[#291C0E]'
+            }`}
+          >
+            Giliran Jalan
           </span>
         )}
 
         <div
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-md font-mono tabular-nums text-base sm:text-lg font-semibold border ${
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-mono tabular-nums text-sm sm:text-base font-bold border-2 ${
             clocks?.isUnlimited
-              ? 'bg-[#171513] text-[#B5A695] border-[#38251C]'
+              ? isLight
+                ? 'bg-[#E1D4C2] text-[#291C0E] border-[#A78D78]'
+                : 'bg-[#291C0E] text-[#BEB5A9] border-[#A78D78]'
               : isLowTime
-              ? 'bg-[#3A1818] text-[#F2E9DC] border-[#D9534F]'
+              ? 'bg-[#291C0E] text-[#E1D4C2] border-[#E1D4C2]'
               : isTurn
-              ? 'bg-[#C7A66A] text-[#171513] border-[#C7A66A]'
-              : 'bg-[#171513] text-[#F2E9DC] border-[#38251C]'
+              ? isLight
+                ? 'bg-[#6E473B] text-[#E1D4C2] border-[#291C0E]'
+                : 'bg-[#E1D4C2] text-[#291C0E] border-[#BEB5A9]'
+              : isLight
+              ? 'bg-[#E1D4C2] text-[#291C0E] border-[#A78D78]'
+              : 'bg-[#291C0E] text-[#E1D4C2] border-[#A78D78]'
           }`}
         >
-          <Clock className="w-4 h-4 shrink-0 opacity-80" />
+          <Clock className="w-4 h-4 shrink-0" />
           <span>
-            {!clocks || clocks.isUnlimited ? '∞ Kasual' : formatChessClockMs(displayMs)}
+            {!clocks || clocks.isUnlimited ? '∞ Santai' : formatChessClockMs(displayMs)}
           </span>
         </div>
       </div>

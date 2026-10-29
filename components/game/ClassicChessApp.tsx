@@ -44,11 +44,13 @@ import {
   setSoundMuted,
   stopChamberAmbientSound,
 } from '../../lib/sound-fx.ts';
-import ChessBoard3D from '../chess/ChessBoard3D.tsx';
+import dynamic from 'next/dynamic';
+import ChessBoard2D from '../chess/ChessBoard2D.tsx';
 import PromotionModal from '../chess/PromotionModal.tsx';
 import PlayerClockBar from './PlayerClockBar.tsx';
 import MoveHistoryPanel from './MoveHistoryPanel.tsx';
 import RoomLobbyAndChatPanel from './RoomLobbyAndChatPanel.tsx';
+import UserGuideModal, { QuickGuideCard } from './UserGuideModal.tsx';
 import {
   Volume2,
   VolumeX,
@@ -58,10 +60,28 @@ import {
   BookOpen,
   Lightbulb,
   SlidersHorizontal,
-  RotateCcw,
-  Crown,
-  Sparkles,
+  Sun,
+  Moon,
+  HelpCircle,
+  Box,
+  Grid,
 } from 'lucide-react';
+
+// Dynamically load ChessBoard3D ONLY on Desktop when 3D mode is active so Mobile/Tablet never downloads Three.js/WebGL
+const ChessBoard3D = dynamic(() => import('../chess/ChessBoard3D.tsx'), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-full min-h-[420px] rounded-xl bg-[#291C0E] border-2 border-[#6E473B] flex flex-col items-center justify-center p-6 text-center text-[#E1D4C2]">
+      <div className="w-10 h-10 rounded-xl bg-[#6E473B] border border-[#A78D78] flex items-center justify-center mb-3 font-serif text-xl font-bold">
+        ♔
+      </div>
+      <p className="text-sm font-bold font-serif">Memuat Ruang Catur 3D...</p>
+      <p className="text-xs text-[#BEB5A9] mt-1">
+        Menyiapkan pencahayaan dan bidak 3D untuk layar Desktop
+      </p>
+    </div>
+  ),
+});
 
 type ActiveWorkspaceTab = 'bot' | 'local' | 'multiplayer' | 'roadmap';
 
@@ -76,20 +96,20 @@ const RULE_TEST_PRESETS: SpecialRuleTestPreset[] = [
   {
     id: 'standard',
     label: 'Posisi Standar',
-    description: '32 Karakter Hidup / Bidak Staunton pada susunan awal resmi FIDE.',
+    description: '32 Bidak Catur pada susunan awal resmi FIDE.',
     fen: INITIAL_FEN,
   },
   {
     id: 'duel_arena',
-    label: 'Uji Duel Karakter',
+    label: 'Taktik Tengah Permainan',
     description:
-      'Posisi taktis tengah permainan untuk langsung mencoba animasi serangan duel Kavaleri, Ratu, Golem, dan Infanteri.',
+      'Posisi taktis tengah permainan untuk melatih serangan dan kombinasi perwira.',
     fen: 'r1bq1rk1/ppp2ppp/2np1n2/2b1p3/2B1P3/2NP1N2/PPP2PPP/R1BQ1RK1 w - - 4 7',
   },
   {
     id: 'castling',
     label: 'Uji Rokade (O-O & O-O-O)',
-    description: 'Jalur Raja & Golem Benteng terbuka untuk menguji rokade pendek dan panjang.',
+    description: 'Jalur Raja & Benteng terbuka untuk menguji rokade pendek dan panjang.',
     fen: 'r3k2r/pppq1ppp/2npbn2/2b1p3/2B1P3/2NPBN2/PPPQ1PPP/R3K2R w KQkq - 4 8',
   },
   {
@@ -135,13 +155,65 @@ function getOrCreateTabSessionToken(): string {
 }
 
 export default function ClassicChessApp() {
-  // Navigation & Visual Settings
+  // Navigation, Theme (Warm Light / Warm Dark), & Responsive 2D/3D Mode
   const [activeTab, setActiveTab] = useState<ActiveWorkspaceTab>('bot');
   const [soundMuted, setSoundMutedState] = useState(false);
+  const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light');
+  const [isDesktopViewport, setIsDesktopViewport] = useState<boolean>(false);
+  const [desktopBoardMode, setDesktopBoardMode] = useState<'3d' | '2d'>('3d');
+  const [showGuideModal, setShowGuideModal] = useState<boolean>(false);
   const [visualSettings, setVisualSettings] = useState<ArenaVisualSettings>(
     DEFAULT_VISUAL_SETTINGS
   );
   const [showVisualDrawer, setShowVisualDrawer] = useState(false);
+
+  // Detect Desktop (>= 1024px) vs Mobile/Tablet (< 1024px) and restore saved preferences
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const savedTheme = window.localStorage.getItem('classic_chess_theme_mode');
+    if (savedTheme === 'light' || savedTheme === 'dark') {
+      queueMicrotask(() => setThemeMode(savedTheme));
+    }
+
+    const savedBoardMode = window.localStorage.getItem('classic_chess_desktop_board_mode');
+    if (savedBoardMode === '2d' || savedBoardMode === '3d') {
+      queueMicrotask(() => setDesktopBoardMode(savedBoardMode));
+    }
+
+    const mediaQuery = window.matchMedia('(min-width: 1024px)');
+    const handleViewportChange = (e: MediaQueryListEvent | MediaQueryList) => {
+      setIsDesktopViewport(e.matches);
+    };
+    handleViewportChange(mediaQuery);
+
+    mediaQuery.addEventListener('change', handleViewportChange);
+    return () => mediaQuery.removeEventListener('change', handleViewportChange);
+  }, []);
+
+  const toggleThemeMode = useCallback(() => {
+    setThemeMode((prev) => {
+      const next = prev === 'light' ? 'dark' : 'light';
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('classic_chess_theme_mode', next);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleDesktopBoardMode = useCallback(() => {
+    setDesktopBoardMode((prev) => {
+      const next = prev === '3d' ? '2d' : '3d';
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('classic_chess_desktop_board_mode', next);
+      }
+      return next;
+    });
+  }, []);
+
+  // Mobile/Tablet (< 1024px) ALWAYS uses 2D. Desktop (>= 1024px) uses 3D by default with 2D toggle.
+  const effectiveBoardMode: '2d' | '3d' = isDesktopViewport ? desktopBoardMode : '2d';
+  const isLight = themeMode === 'light';
 
   const updateVisualSettings = useCallback((partial: Partial<ArenaVisualSettings>) => {
     setVisualSettings((prev) => {
@@ -1099,6 +1171,7 @@ export default function ClassicChessApp() {
         materialAdvantage,
         clocks: activeRoom.clocks,
         roleBadge: myRole === barColor ? 'Anda' : undefined,
+        themeMode,
       };
     }
 
@@ -1119,11 +1192,12 @@ export default function ClassicChessApp() {
         materialAdvantage,
         clocks: null,
         roleBadge: isBotSeat ? (botThinking ? 'Berpikir...' : 'AI') : 'Anda',
+        themeMode,
       };
     }
 
     return {
-      displayName: isWhite ? 'Ordo Kerajaan Putih (Lokal)' : 'Legiun Obsidian Hitam (Lokal)',
+      displayName: isWhite ? 'Pemain Putih (Lokal)' : 'Pemain Hitam (Lokal)',
       color: barColor,
       isTurn: !localEval.isAutomaticGameOver && !localClaimedDraw && localEval.turn === barColor,
       inCheck: localEval.inCheck && localEval.turn === barColor,
@@ -1132,6 +1206,7 @@ export default function ClassicChessApp() {
       capturedPieces,
       materialAdvantage,
       clocks: null,
+      themeMode,
     };
   };
 
@@ -1160,31 +1235,68 @@ export default function ClassicChessApp() {
       ? 'M'
       : `${evaluationCp >= 0 ? '+' : ''}${(evaluationCp / 100).toFixed(1)}`;
 
-  return (
-    <div className="min-h-screen flex flex-col bg-[#14110F] text-[#F2E9DC]">
-      {/* Strict 3-Zone Top Bar Contract */}
-      <header className="flex items-center justify-between gap-8 px-6 py-3.5 bg-[#14110F] border-b border-[#38251C]">
-        {/* Zone 1: Single text element wordmark */}
-        <a
-          href="#top"
-          onClick={(e) => {
-            e.preventDefault();
-            setActiveTab('bot');
-          }}
-          className="text-xl font-bold tracking-tight text-[#F2E9DC] font-serif whitespace-nowrap shrink-0"
-        >
-          Living Chess 3D Arena
-        </a>
+  const handleFlipBoardOrientation = () => {
+    if (isMultiplayerView) {
+      setMpOrientation((prev) => (prev === 'w' ? 'b' : 'w'));
+    } else {
+      setLocalOrientation((prev) => (prev === 'w' ? 'b' : 'w'));
+    }
+  };
 
-        {/* Zone 2: Concise single-line navigation links */}
-        <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-[#B5A695]">
+  return (
+    <div
+      className={`min-h-screen flex flex-col transition-colors ${
+        isLight
+          ? 'bg-[#E1D4C2] text-[#291C0E]'
+          : 'bg-[#291C0E] text-[#E1D4C2]'
+      }`}
+    >
+      {/* Top Header Bar combining all 5 palette colors (#291C0E, #6E473B, #A78D78, #BEB5A9, #E1D4C2) */}
+      <header
+        className={`flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3 border-b-2 transition-colors ${
+          isLight
+            ? 'bg-[#291C0E] text-[#E1D4C2] border-[#6E473B]'
+            : 'bg-[#6E473B] text-[#E1D4C2] border-[#A78D78]'
+        }`}
+      >
+        {/* Left: Brand & 5-Color Palette Swatch */}
+        <div className="flex items-center gap-3">
+          <a
+            href="#top"
+            onClick={(e) => {
+              e.preventDefault();
+              setActiveTab('bot');
+            }}
+            className="flex items-center gap-2.5 text-lg sm:text-xl font-bold tracking-tight text-[#E1D4C2] font-serif whitespace-nowrap shrink-0"
+          >
+            <span className="w-8 h-8 rounded-lg bg-[#E1D4C2] text-[#291C0E] border-2 border-[#A78D78] flex items-center justify-center text-base font-bold">
+              ♔
+            </span>
+            <span>Classic Chess</span>
+          </a>
+
+          {/* 5-Color Complementary Palette Badge */}
+          <div
+            className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-md bg-[#291C0E] border border-[#A78D78]"
+            title="Palet 5 Warna Hangat: #291C0E · #6E473B · #A78D78 · #BEB5A9 · #E1D4C2"
+          >
+            <span className="w-2.5 h-2.5 rounded-full bg-[#291C0E] border border-[#E1D4C2]" />
+            <span className="w-2.5 h-2.5 rounded-full bg-[#6E473B] border border-[#E1D4C2]" />
+            <span className="w-2.5 h-2.5 rounded-full bg-[#A78D78]" />
+            <span className="w-2.5 h-2.5 rounded-full bg-[#BEB5A9]" />
+            <span className="w-2.5 h-2.5 rounded-full bg-[#E1D4C2]" />
+          </div>
+        </div>
+
+        {/* Center: Mode Navigation Links (Desktop/Tablet) */}
+        <nav className="hidden md:flex items-center gap-2 text-xs font-semibold">
           <button
             type="button"
             onClick={() => setActiveTab('bot')}
-            className={`hover:text-[#F2E9DC] transition-colors whitespace-nowrap shrink-0 py-1 ${
+            className={`px-3 py-1.5 rounded-lg border transition-colors whitespace-nowrap ${
               activeTab === 'bot'
-                ? 'text-[#C7A66A] underline underline-offset-8 decoration-[#C7A66A]'
-                : ''
+                ? 'bg-[#E1D4C2] text-[#291C0E] border-[#BEB5A9] font-bold'
+                : 'bg-[#6E473B] text-[#E1D4C2] border-[#A78D78] hover:bg-[#A78D78] hover:text-[#291C0E]'
             }`}
           >
             Lawan Bot AI
@@ -1193,136 +1305,170 @@ export default function ClassicChessApp() {
           <button
             type="button"
             onClick={() => setActiveTab('multiplayer')}
-            className={`hover:text-[#F2E9DC] transition-colors whitespace-nowrap shrink-0 py-1 ${
+            className={`px-3 py-1.5 rounded-lg border transition-colors whitespace-nowrap ${
               activeTab === 'multiplayer'
-                ? 'text-[#C7A66A] underline underline-offset-8 decoration-[#C7A66A]'
-                : ''
+                ? 'bg-[#E1D4C2] text-[#291C0E] border-[#BEB5A9] font-bold'
+                : 'bg-[#6E473B] text-[#E1D4C2] border-[#A78D78] hover:bg-[#A78D78] hover:text-[#291C0E]'
             }`}
           >
-            Room Multiplayer {activeRoom ? `(${activeRoom.roomCode})` : ''}
+            Room Online {activeRoom ? `(${activeRoom.roomCode})` : ''}
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab('local')}
-            className={`hover:text-[#F2E9DC] transition-colors whitespace-nowrap shrink-0 py-1 ${
+            className={`px-3 py-1.5 rounded-lg border transition-colors whitespace-nowrap ${
               activeTab === 'local'
-                ? 'text-[#C7A66A] underline underline-offset-8 decoration-[#C7A66A]'
-                : ''
+                ? 'bg-[#E1D4C2] text-[#291C0E] border-[#BEB5A9] font-bold'
+                : 'bg-[#6E473B] text-[#E1D4C2] border-[#A78D78] hover:bg-[#A78D78] hover:text-[#291C0E]'
             }`}
           >
-            Arena Duel & Uji Aturan
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setShowVisualDrawer((prev) => !prev)}
-            className={`hover:text-[#F2E9DC] transition-colors whitespace-nowrap shrink-0 py-1 ${
-              showVisualDrawer ? 'text-[#C7A66A]' : ''
-            }`}
-          >
-            Pengaturan Visual 3D
-          </button>
-
-          <button
-            type="button"
-            onClick={toggleMute}
-            className="hover:text-[#F2E9DC] transition-colors whitespace-nowrap shrink-0 py-1"
-          >
-            {soundMuted ? 'Suara: Mati' : 'Suara: Aktif'}
+            Latihan & Aturan
           </button>
         </nav>
 
-        {/* Zone 3: 1 Primary Action CTA */}
-        <div className="flex items-center gap-3 shrink-0">
+        {/* Right: 2D/3D Switch (Desktop), Theme Toggle (Light/Dark), Guide Modal Button, & Sound */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Desktop 2D / 3D Switch Button (Mobile/Tablet automatically uses 2D) */}
+          {isDesktopViewport ? (
+            <button
+              type="button"
+              onClick={toggleDesktopBoardMode}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#A78D78] text-[#291C0E] border border-[#E1D4C2] hover:bg-[#E1D4C2] transition-colors whitespace-nowrap"
+              title="Beralih antara Papan 3D dan Papan 2D di Desktop"
+            >
+              {effectiveBoardMode === '3d' ? (
+                <>
+                  <Grid className="w-3.5 h-3.5" />
+                  <span>Ganti ke 2D</span>
+                </>
+              ) : (
+                <>
+                  <Box className="w-3.5 h-3.5" />
+                  <span>Ganti ke 3D</span>
+                </>
+              )}
+            </button>
+          ) : (
+            <span
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-[#A78D78] text-[#291C0E] border border-[#E1D4C2] whitespace-nowrap"
+              title="Mode 2D aktif otomatis untuk performa optimal di HP & Tablet"
+            >
+              <Grid className="w-3 h-3" />
+              <span>2D Mobile</span>
+            </span>
+          )}
+
+          {/* Desktop 3D Quality Settings Drawer Toggle (only when 3D board is active) */}
+          {isDesktopViewport && effectiveBoardMode === '3d' && (
+            <button
+              type="button"
+              onClick={() => setShowVisualDrawer((prev) => !prev)}
+              className={`hidden lg:inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors whitespace-nowrap ${
+                showVisualDrawer
+                  ? 'bg-[#E1D4C2] text-[#291C0E] border-[#BEB5A9]'
+                  : 'bg-[#291C0E] text-[#E1D4C2] border-[#A78D78] hover:bg-[#A78D78] hover:text-[#291C0E]'
+              }`}
+              title="Pengaturan Kualitas Visual 3D"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Kualitas 3D</span>
+            </button>
+          )}
+
+          {/* Warm Light / Warm Dark Theme Switcher */}
           <button
             type="button"
-            onClick={() => {
-              setActiveTab('multiplayer');
-              if (!activeRoom) {
-                handleCreateRoom();
-              }
-            }}
-            className="px-4 py-2 text-xs font-semibold text-[#171513] bg-[#C7A66A] rounded-lg hover:bg-[#d4b67d] transition-colors whitespace-nowrap shrink-0"
+            onClick={toggleThemeMode}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#BEB5A9] text-[#291C0E] border border-[#E1D4C2] hover:bg-[#E1D4C2] transition-colors whitespace-nowrap"
+            title="Ganti antara Tema Terang Hangat dan Tema Gelap Hangat"
           >
-            {activeRoom ? `Room Aktif: ${activeRoom.roomCode}` : 'Buat Room Undangan'}
+            {isLight ? (
+              <>
+                <Moon className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Tema Gelap</span>
+              </>
+            ) : (
+              <>
+                <Sun className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Tema Terang</span>
+              </>
+            )}
+          </button>
+
+          {/* Interactive Step-by-Step Guide Button */}
+          <button
+            type="button"
+            onClick={() => setShowGuideModal(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#E1D4C2] text-[#291C0E] border border-[#BEB5A9] hover:bg-[#BEB5A9] transition-colors whitespace-nowrap"
+            title="Buka Panduan Langkah demi Langkah"
+          >
+            <HelpCircle className="w-3.5 h-3.5" />
+            <span>Panduan</span>
+          </button>
+
+          {/* Sound Mute Button */}
+          <button
+            type="button"
+            onClick={toggleMute}
+            className="p-2 rounded-lg bg-[#291C0E] text-[#E1D4C2] border border-[#A78D78] hover:bg-[#A78D78] hover:text-[#291C0E] transition-colors"
+            aria-label={soundMuted ? 'Aktifkan Suara' : 'Matikan Suara'}
+            title={soundMuted ? 'Suara: Mati' : 'Suara: Aktif'}
+          >
+            {soundMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
           </button>
         </div>
       </header>
 
-      {/* Optional Visual & Performance Settings Strip */}
-      {showVisualDrawer && (
-        <div className="bg-[#1D1814] border-b border-[#38251C] px-6 py-3">
-          <div className="max-w-[1440px] mx-auto flex flex-wrap items-center justify-between gap-4">
+      {/* Optional 3D Visual Settings Strip (Desktop 3D Mode only) */}
+      {isDesktopViewport && effectiveBoardMode === '3d' && showVisualDrawer && (
+        <div className="bg-[#6E473B] text-[#E1D4C2] border-b-2 border-[#A78D78] px-6 py-2.5">
+          <div className="max-w-[1440px] mx-auto flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <SlidersHorizontal className="w-4 h-4 text-[#C7A66A]" />
-              <span className="text-xs font-semibold text-[#F2E9DC]">
-                Konfigurasi Ruang Catur 3D & Karakter Hidup:
+              <SlidersHorizontal className="w-4 h-4 text-[#E1D4C2]" />
+              <span className="text-xs font-bold">
+                Pengaturan Visual Papan 3D Desktop:
               </span>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2.5">
               {/* Piece Representation Toggle */}
-              <div className="flex items-center gap-1 bg-[#14110F] p-1 rounded-lg border border-[#38251C]">
+              <div className="flex items-center gap-1 bg-[#291C0E] p-1 rounded-lg border border-[#A78D78]">
                 <button
                   type="button"
                   onClick={() => updateVisualSettings({ pieceStyle: 'living' })}
-                  className={`px-2.5 py-1 rounded text-xs font-medium whitespace-nowrap ${
+                  className={`px-2.5 py-1 rounded text-xs font-semibold whitespace-nowrap ${
                     visualSettings.pieceStyle === 'living'
-                      ? 'bg-[#C7A66A] text-[#171513] font-semibold'
-                      : 'text-[#B5A695]'
+                      ? 'bg-[#E1D4C2] text-[#291C0E] font-bold'
+                      : 'text-[#BEB5A9]'
                   }`}
                 >
-                  Karakter Hidup 3D
+                  Karakter 3D
                 </button>
                 <button
                   type="button"
                   onClick={() => updateVisualSettings({ pieceStyle: 'staunton' })}
-                  className={`px-2.5 py-1 rounded text-xs font-medium whitespace-nowrap ${
+                  className={`px-2.5 py-1 rounded text-xs font-semibold whitespace-nowrap ${
                     visualSettings.pieceStyle === 'staunton'
-                      ? 'bg-[#C7A66A] text-[#171513] font-semibold'
-                      : 'text-[#B5A695]'
+                      ? 'bg-[#E1D4C2] text-[#291C0E] font-bold'
+                      : 'text-[#BEB5A9]'
                   }`}
                 >
                   Staunton Klasik
                 </button>
               </div>
 
-              {/* Cinematic Duel Captures */}
-              <div className="flex items-center gap-1 bg-[#14110F] p-1 rounded-lg border border-[#38251C]">
-                {(
-                  [
-                    { id: 'on', label: 'Duel Sinematik' },
-                    { id: 'reduced', label: 'Duel Ringkas' },
-                    { id: 'off', label: 'Duel Mati' },
-                  ] as const
-                ).map((opt) => (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => updateVisualSettings({ cinematicCaptures: opt.id })}
-                    className={`px-2.5 py-1 rounded text-xs font-medium whitespace-nowrap ${
-                      visualSettings.cinematicCaptures === opt.id
-                        ? 'bg-[#38251C] text-[#C7A66A] font-semibold'
-                        : 'text-[#B5A695]'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-
               {/* Quality Presets */}
-              <div className="flex items-center gap-1 bg-[#14110F] p-1 rounded-lg border border-[#38251C]">
+              <div className="flex items-center gap-1 bg-[#291C0E] p-1 rounded-lg border border-[#A78D78]">
                 {(['low', 'medium', 'high', 'ultra'] as const).map((q) => (
                   <button
                     key={q}
                     type="button"
                     onClick={() => updateVisualSettings({ graphicsQuality: q })}
-                    className={`px-2 py-1 rounded text-xs font-medium uppercase whitespace-nowrap ${
+                    className={`px-2 py-1 rounded text-xs font-semibold uppercase whitespace-nowrap ${
                       visualSettings.graphicsQuality === q
-                        ? 'bg-[#C7A66A] text-[#171513] font-semibold'
-                        : 'text-[#B5A695]'
+                        ? 'bg-[#E1D4C2] text-[#291C0E] font-bold'
+                        : 'text-[#BEB5A9]'
                     }`}
                   >
                     {q}
@@ -1330,34 +1476,34 @@ export default function ClassicChessApp() {
                 ))}
               </div>
 
-              {/* Ambient Chamber Audio */}
+              {/* Switch to 2D shortcut */}
               <button
                 type="button"
-                onClick={() =>
-                  updateVisualSettings({
-                    ambientSound: !visualSettings.ambientSound,
-                  })
-                }
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium border whitespace-nowrap ${
-                  visualSettings.ambientSound
-                    ? 'bg-[#38251C] text-[#C7A66A] border-[#C7A66A]'
-                    : 'bg-[#14110F] text-[#B5A695] border-[#38251C]'
-                }`}
+                onClick={() => setDesktopBoardMode('2d')}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#E1D4C2] text-[#291C0E] border border-[#291C0E] hover:bg-[#BEB5A9] transition-colors whitespace-nowrap"
               >
-                Ambien Ruangan: {visualSettings.ambientSound ? 'Aktif' : 'Mati'}
+                Gunakan Papan 2D Ringan
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Mobile Tab Switcher */}
-      <div className="flex md:hidden items-center justify-between gap-1 px-4 py-2 bg-[#221D19] border-b border-[#38251C] overflow-x-auto">
+      {/* Mobile & Tablet Mode Switcher Strip */}
+      <div
+        className={`flex md:hidden items-center justify-between gap-1.5 px-3 py-2 border-b-2 overflow-x-auto ${
+          isLight
+            ? 'bg-[#BEB5A9] border-[#A78D78]'
+            : 'bg-[#6E473B] border-[#A78D78]'
+        }`}
+      >
         <button
           type="button"
           onClick={() => setActiveTab('bot')}
-          className={`flex-1 py-1.5 px-2.5 rounded text-xs font-medium whitespace-nowrap ${
-            activeTab === 'bot' ? 'bg-[#C7A66A] text-[#171513] font-semibold' : 'text-[#B5A695]'
+          className={`flex-1 py-1.5 px-2.5 rounded-lg text-xs font-bold border transition-colors whitespace-nowrap ${
+            activeTab === 'bot'
+              ? 'bg-[#291C0E] text-[#E1D4C2] border-[#6E473B]'
+              : 'bg-[#E1D4C2] text-[#291C0E] border-[#A78D78]'
           }`}
         >
           Lawan Bot AI
@@ -1365,61 +1511,62 @@ export default function ClassicChessApp() {
         <button
           type="button"
           onClick={() => setActiveTab('multiplayer')}
-          className={`flex-1 py-1.5 px-2.5 rounded text-xs font-medium whitespace-nowrap ${
+          className={`flex-1 py-1.5 px-2.5 rounded-lg text-xs font-bold border transition-colors whitespace-nowrap ${
             activeTab === 'multiplayer'
-              ? 'bg-[#C7A66A] text-[#171513] font-semibold'
-              : 'text-[#B5A695]'
+              ? 'bg-[#291C0E] text-[#E1D4C2] border-[#6E473B]'
+              : 'bg-[#E1D4C2] text-[#291C0E] border-[#A78D78]'
           }`}
         >
-          Multiplayer
+          Room Online {activeRoom ? `(${activeRoom.roomCode})` : ''}
         </button>
         <button
           type="button"
           onClick={() => setActiveTab('local')}
-          className={`flex-1 py-1.5 px-2.5 rounded text-xs font-medium whitespace-nowrap ${
-            activeTab === 'local' ? 'bg-[#C7A66A] text-[#171513] font-semibold' : 'text-[#B5A695]'
+          className={`flex-1 py-1.5 px-2.5 rounded-lg text-xs font-bold border transition-colors whitespace-nowrap ${
+            activeTab === 'local'
+              ? 'bg-[#291C0E] text-[#E1D4C2] border-[#6E473B]'
+              : 'bg-[#E1D4C2] text-[#291C0E] border-[#A78D78]'
           }`}
         >
-          Arena Lokal
-        </button>
-        <button
-          type="button"
-          onClick={toggleMute}
-          className="p-1.5 rounded text-[#B5A695] hover:text-[#F2E9DC]"
-          aria-label="Toggle Sound"
-        >
-          {soundMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+          Latihan
         </button>
       </div>
 
-      {/* Main Content Container */}
-      <main className="flex-1 w-full max-w-[1440px] mx-auto px-4 sm:px-6 py-4 grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-        {/* LEFT / MAIN AREA: 3D Grand Chess Chamber Viewport + Evaluation Bar + Player Clock Bars (8 cols on desktop) */}
-        <div className="lg:col-span-8 flex flex-col gap-3 min-h-[560px] lg:h-[calc(100vh-88px)]">
+      {/* Main Content Container: Simple, Clean Responsive Grid */}
+      <main className="flex-1 w-full max-w-[1440px] mx-auto px-3 sm:px-6 py-4 grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+        {/* LEFT / MAIN AREA: Player Clocks + Chessboard (2D on Mobile/Tablet, 3D/2D on Desktop) + Quick Guide (8 cols on desktop) */}
+        <div className="lg:col-span-8 flex flex-col gap-3">
           {/* Top Bar: Opponent Info & Clock */}
           <PlayerClockBar {...getPlayerBarProps(topBarColor)} />
 
-          {/* Center: Evaluation Bar + 3D Grand Chess Chamber */}
-          <div className="flex-1 flex gap-2.5 min-h-[420px]">
-            {/* Vertical Live Evaluation Bar (shown in Bot AI & Local modes) */}
+          {/* Center: Evaluation Bar + Active Chessboard (2D or 3D) */}
+          <div className="flex gap-2.5 items-stretch">
+            {/* Vertical Live Evaluation Bar using pure SVG (zero inline styles) */}
             {!isMultiplayerView && (
               <div
-                className="w-6 rounded-xl bg-[#1A1614] border border-[#38251C] overflow-hidden flex flex-col justify-between relative shrink-0 select-none"
+                className="w-6 rounded-xl bg-[#291C0E] border-2 border-[#6E473B] overflow-hidden flex flex-col justify-between relative shrink-0 select-none"
                 title={`Evaluasi Posisi: ${formattedEvalScore}`}
               >
-                <div
-                  className="w-full bg-[#221A15] transition-all duration-300"
-                  style={{ height: `${100 - whiteEvalPercentage}%` }}
-                />
-                <div
-                  className="w-full bg-[#E7D5B5] transition-all duration-300"
-                  style={{ height: `${whiteEvalPercentage}%` }}
-                />
+                <svg
+                  viewBox="0 0 24 100"
+                  preserveAspectRatio="none"
+                  className="w-full h-full block"
+                  aria-hidden="true"
+                >
+                  <rect x="0" y="0" width="24" height="100" fill="#291C0E" />
+                  <rect
+                    x="0"
+                    y={100 - whiteEvalPercentage}
+                    width="24"
+                    height={whiteEvalPercentage}
+                    fill="#E1D4C2"
+                  />
+                </svg>
                 <span
                   className={`absolute left-1/2 -translate-x-1/2 text-[9px] font-mono font-bold tabular-nums ${
                     evaluationCp >= 0
-                      ? 'bottom-1.5 text-[#171513]'
-                      : 'top-1.5 text-[#F2E9DC]'
+                      ? 'bottom-1.5 text-[#291C0E]'
+                      : 'top-1.5 text-[#E1D4C2]'
                   }`}
                 >
                   {formattedEvalScore}
@@ -1427,43 +1574,65 @@ export default function ClassicChessApp() {
               </div>
             )}
 
-            <div className="flex-1 relative min-h-[420px]">
-              <ChessBoard3D
-                fen={currentFen}
-                orientation={currentOrientation}
-                selectedSquare={selectedSquare}
-                legalMoves={legalMoves}
-                lastMove={currentLastMove}
-                lastCaptureDuel={currentLastCaptureDuel}
-                hintMove={hintResult ? { from: hintResult.from, to: hintResult.to } : null}
-                kingSquareInCheck={currentKingSquareInCheck}
-                interactive={canInteractWithBoard}
-                onSquareSelect={handleSquareSelect}
-                onMoveAttempt={handleMoveAttempt}
-                onFlipOrientation={() => {
-                  if (isMultiplayerView) {
-                    setMpOrientation((prev) => (prev === 'w' ? 'b' : 'w'));
-                  } else {
-                    setLocalOrientation((prev) => (prev === 'w' ? 'b' : 'w'));
+            {/* Board Container */}
+            <div className="flex-1 relative min-h-[340px] sm:min-h-[460px]">
+              {effectiveBoardMode === '3d' ? (
+                <div className="w-full h-[500px] lg:h-[540px] relative">
+                  <ChessBoard3D
+                    fen={currentFen}
+                    orientation={currentOrientation}
+                    selectedSquare={selectedSquare}
+                    legalMoves={legalMoves}
+                    lastMove={currentLastMove}
+                    lastCaptureDuel={currentLastCaptureDuel}
+                    hintMove={
+                      hintResult ? { from: hintResult.from, to: hintResult.to } : null
+                    }
+                    kingSquareInCheck={currentKingSquareInCheck}
+                    interactive={canInteractWithBoard}
+                    onSquareSelect={handleSquareSelect}
+                    onMoveAttempt={handleMoveAttempt}
+                    onFlipOrientation={handleFlipBoardOrientation}
+                    visualSettings={visualSettings}
+                    onUpdateVisualSettings={updateVisualSettings}
+                  />
+                </div>
+              ) : (
+                <ChessBoard2D
+                  fen={currentFen}
+                  orientation={currentOrientation}
+                  selectedSquare={selectedSquare}
+                  legalMoves={legalMoves}
+                  lastMove={currentLastMove}
+                  hintMove={
+                    hintResult ? { from: hintResult.from, to: hintResult.to } : null
                   }
-                }}
-                visualSettings={visualSettings}
-                onUpdateVisualSettings={updateVisualSettings}
-              />
+                  kingSquareInCheck={currentKingSquareInCheck}
+                  interactive={canInteractWithBoard}
+                  onSquareSelect={handleSquareSelect}
+                  onMoveAttempt={handleMoveAttempt}
+                  onFlipOrientation={handleFlipBoardOrientation}
+                  themeMode={themeMode}
+                  isDesktopViewport={isDesktopViewport}
+                  onSwitchTo3D={() => setDesktopBoardMode('3d')}
+                />
+              )}
 
               {/* Local / Bot Game Over Overlay Banner */}
               {(activeTab === 'local' || activeTab === 'bot') &&
                 (localEval.isAutomaticGameOver || Boolean(localClaimedDraw)) && (
-                  <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 w-[92%] max-w-md p-4 rounded-xl bg-[#221D19] border border-[#C7A66A] shadow-2xl flex items-center justify-between gap-4">
+                  <div className="absolute top-14 left-1/2 -translate-x-1/2 z-30 w-[92%] max-w-md p-4 rounded-xl bg-[#291C0E] text-[#E1D4C2] border-2 border-[#E1D4C2] shadow-2xl flex items-center justify-between gap-4">
                     <div>
-                      <div className="text-sm font-bold text-[#C7A66A] font-serif">
+                      <div className="text-sm font-bold text-[#E1D4C2] font-serif">
                         {localClaimedDraw
                           ? 'Pertandingan Remis (Klaim Pemain)'
                           : localEval.isCheckmate
-                          ? `Skakmat! ${localEval.winnerColor === 'w' ? 'Putih' : 'Hitam'} Menang`
+                          ? `Skakmat! ${
+                              localEval.winnerColor === 'w' ? 'Putih' : 'Hitam'
+                            } Menang`
                           : 'Pertandingan Berakhir Remis'}
                       </div>
-                      <div className="text-xs text-[#E7D5B5] mt-0.5">
+                      <div className="text-xs text-[#BEB5A9] mt-0.5">
                         {localClaimedDraw ||
                           (localEval.terminationReason === 'checkmate'
                             ? `Skor Akhir: ${localEval.result}`
@@ -1477,7 +1646,7 @@ export default function ClassicChessApp() {
                           ? handleStartBotGame(botPlayerColor)
                           : handleLoadLocalPreset(RULE_TEST_PRESETS[0])
                       }
-                      className="px-3.5 py-2 rounded-lg text-xs font-semibold bg-[#C7A66A] text-[#171513] hover:bg-[#d4b67d] transition-colors whitespace-nowrap shrink-0"
+                      className="px-3.5 py-2 rounded-lg text-xs font-bold bg-[#E1D4C2] text-[#291C0E] hover:bg-[#BEB5A9] transition-colors whitespace-nowrap shrink-0"
                     >
                       Main Lagi
                     </button>
@@ -1488,80 +1657,124 @@ export default function ClassicChessApp() {
 
           {/* Bottom Bar: Active Player Info & Clock */}
           <PlayerClockBar {...getPlayerBarProps(bottomBarColor)} />
+
+          {/* Compact User Guide Panel on Main Screen */}
+          <QuickGuideCard
+            themeMode={themeMode}
+            isDesktopViewport={isDesktopViewport}
+            effectiveBoardMode={effectiveBoardMode}
+            onOpenModal={() => setShowGuideModal(true)}
+          />
         </div>
 
         {/* RIGHT SIDEBAR: Mode Switcher, Bot AI / Multiplayer / Local Controls, & Move History (4 cols on desktop) */}
-        <div className="lg:col-span-4 flex flex-col gap-3.5 lg:h-[calc(100vh-88px)] lg:overflow-y-auto pr-0.5">
+        <div className="lg:col-span-4 flex flex-col gap-3.5">
           {/* 3-Mode Segmented Control */}
-          <div className="grid grid-cols-3 gap-1 p-1.5 bg-[#221D19] border border-[#38251C] rounded-xl shrink-0">
+          <div
+            className={`grid grid-cols-3 gap-1.5 p-1.5 rounded-xl border-2 shrink-0 ${
+              isLight
+                ? 'bg-[#BEB5A9] border-[#A78D78]'
+                : 'bg-[#6E473B] border-[#A78D78]'
+            }`}
+          >
             <button
               type="button"
               onClick={() => setActiveTab('bot')}
-              className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
+              className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap ${
                 activeTab === 'bot'
-                  ? 'bg-[#C7A66A] text-[#171513]'
-                  : 'text-[#B5A695] hover:text-[#F2E9DC]'
+                  ? isLight
+                    ? 'bg-[#6E473B] text-[#E1D4C2] border border-[#291C0E]'
+                    : 'bg-[#E1D4C2] text-[#291C0E] border border-[#BEB5A9]'
+                  : isLight
+                  ? 'text-[#291C0E] hover:bg-[#A78D78]'
+                  : 'text-[#E1D4C2] hover:bg-[#291C0E]'
               }`}
             >
               <Bot className="w-3.5 h-3.5" />
-              <span>Lawan Bot AI</span>
+              <span>Bot AI</span>
             </button>
 
             <button
               type="button"
               onClick={() => setActiveTab('multiplayer')}
-              className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
+              className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap ${
                 activeTab === 'multiplayer'
-                  ? 'bg-[#C7A66A] text-[#171513]'
-                  : 'text-[#B5A695] hover:text-[#F2E9DC]'
+                  ? isLight
+                    ? 'bg-[#6E473B] text-[#E1D4C2] border border-[#291C0E]'
+                    : 'bg-[#E1D4C2] text-[#291C0E] border border-[#BEB5A9]'
+                  : isLight
+                  ? 'text-[#291C0E] hover:bg-[#A78D78]'
+                  : 'text-[#E1D4C2] hover:bg-[#291C0E]'
               }`}
             >
               <Users className="w-3.5 h-3.5" />
-              <span>Room Online</span>
+              <span>Multiplayer</span>
             </button>
 
             <button
               type="button"
               onClick={() => setActiveTab('local')}
-              className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
+              className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap ${
                 activeTab === 'local'
-                  ? 'bg-[#C7A66A] text-[#171513]'
-                  : 'text-[#B5A695] hover:text-[#F2E9DC]'
+                  ? isLight
+                    ? 'bg-[#6E473B] text-[#E1D4C2] border border-[#291C0E]'
+                    : 'bg-[#E1D4C2] text-[#291C0E] border border-[#BEB5A9]'
+                  : isLight
+                  ? 'text-[#291C0E] hover:bg-[#A78D78]'
+                  : 'text-[#E1D4C2] hover:bg-[#291C0E]'
               }`}
             >
               <Swords className="w-3.5 h-3.5" />
-              <span>Uji Duel 3D</span>
+              <span>Latihan</span>
             </button>
           </div>
 
-          {/* Conditional Context Card: Bot AI Mode OR Local Duel Presets OR Multiplayer Room */}
+          {/* Conditional Context Card: Bot AI Mode OR Local Presets OR Multiplayer Room */}
           {activeTab === 'bot' ? (
-            <div className="bg-[#221D19] border border-[#38251C] rounded-xl p-4 flex flex-col gap-3 shrink-0">
-              <div className="flex items-center justify-between border-b border-[#38251C] pb-2.5">
+            <div
+              className={`rounded-xl border-2 p-4 flex flex-col gap-3 shrink-0 transition-colors ${
+                isLight
+                  ? 'bg-[#BEB5A9] border-[#A78D78] text-[#291C0E]'
+                  : 'bg-[#6E473B] border-[#A78D78] text-[#E1D4C2]'
+              }`}
+            >
+              <div className="flex items-center justify-between border-b border-[#A78D78] pb-2.5">
                 <div className="flex items-center gap-2">
-                  <Bot className="w-4 h-4 text-[#C7A66A]" />
+                  <span className="w-7 h-7 rounded-lg bg-[#291C0E] text-[#E1D4C2] border border-[#A78D78] flex items-center justify-center shrink-0">
+                    <Bot className="w-4 h-4" />
+                  </span>
                   <div>
-                    <h3 className="text-sm font-semibold text-[#F2E9DC]">
-                      Arena Latihan vs Bot AI
+                    <h3 className="text-sm font-bold font-serif">
+                      Lawan Bot AI
                     </h3>
-                    <p className="text-[11px] text-[#B5A695]">
-                      Pilih tingkat kesulitan & minta saran langkah taktis
+                    <p
+                      className={`text-[11px] ${
+                        isLight ? 'text-[#6E473B]' : 'text-[#BEB5A9]'
+                      }`}
+                    >
+                      Pilih tingkat kesulitan & minta saran langkah
                     </p>
                   </div>
                 </div>
-                <span className="text-xs font-mono text-[#C7A66A] tabular-nums">
+                <span className="px-2 py-0.5 rounded bg-[#291C0E] text-[#E1D4C2] text-xs font-mono font-bold tabular-nums">
                   ELO ~{BOT_DIFFICULTY_PRESETS[botDifficulty].eloEstimate}
                 </span>
               </div>
 
               {/* 5 Difficulty Levels */}
               <div>
-                <label className="block text-xs font-medium text-[#E7D5B5] mb-1.5">
+                <label className="block text-xs font-bold mb-1.5">
                   Tingkat Kesulitan AI
                 </label>
                 <div className="grid grid-cols-5 gap-1">
                   {(
-                    ['beginner', 'casual', 'tactician', 'master', 'grandmaster'] as BotDifficultyId[]
+                    [
+                      'beginner',
+                      'casual',
+                      'tactician',
+                      'master',
+                      'grandmaster',
+                    ] as BotDifficultyId[]
                   ).map((diffId) => {
                     const active = botDifficulty === diffId;
                     const labels: Record<BotDifficultyId, string> = {
@@ -1576,10 +1789,14 @@ export default function ClassicChessApp() {
                         key={diffId}
                         type="button"
                         onClick={() => setBotDifficulty(diffId)}
-                        className={`py-1.5 px-1.5 rounded-lg text-[11px] font-medium border transition-colors whitespace-nowrap ${
+                        className={`py-1.5 px-1.5 rounded-lg text-[11px] font-semibold border transition-colors whitespace-nowrap ${
                           active
-                            ? 'bg-[#C7A66A] text-[#171513] border-[#C7A66A] font-semibold'
-                            : 'bg-[#171513] text-[#B5A695] border-[#38251C] hover:text-[#F2E9DC]'
+                            ? isLight
+                              ? 'bg-[#6E473B] text-[#E1D4C2] border-[#291C0E] font-bold'
+                              : 'bg-[#E1D4C2] text-[#291C0E] border-[#BEB5A9] font-bold'
+                            : isLight
+                            ? 'bg-[#E1D4C2] text-[#291C0E] border-[#A78D78] hover:bg-[#A78D78]'
+                            : 'bg-[#291C0E] text-[#BEB5A9] border-[#A78D78] hover:text-[#E1D4C2]'
                         }`}
                       >
                         {labels[diffId]}
@@ -1587,50 +1804,64 @@ export default function ClassicChessApp() {
                     );
                   })}
                 </div>
-                <p className="text-[11px] text-[#B5A695] mt-1.5 leading-relaxed">
-                  <strong className="text-[#E7D5B5]">
-                    {BOT_DIFFICULTY_PRESETS[botDifficulty].name}:
-                  </strong>{' '}
+                <p
+                  className={`text-[11px] mt-1.5 leading-relaxed ${
+                    isLight ? 'text-[#291C0E]' : 'text-[#E1D4C2]'
+                  }`}
+                >
+                  <strong>{BOT_DIFFICULTY_PRESETS[botDifficulty].name}:</strong>{' '}
                   {BOT_DIFFICULTY_PRESETS[botDifficulty].description}
                 </p>
               </div>
 
-              {/* Start New Game as White / Random / Black + Hint Button */}
+              {/* Start New Game as White / Black / Random + Hint Button */}
               <div className="grid grid-cols-4 gap-1.5">
                 <button
                   type="button"
                   onClick={() => handleStartBotGame('w')}
-                  className={`py-1.5 px-2 rounded-lg text-xs font-medium border transition-colors whitespace-nowrap ${
+                  className={`py-1.5 px-2 rounded-lg text-xs font-semibold border transition-colors whitespace-nowrap ${
                     botPlayerColor === 'w'
-                      ? 'bg-[#38251C] text-[#C7A66A] border-[#C7A66A]'
-                      : 'bg-[#171513] text-[#E7D5B5] border-[#38251C]'
+                      ? isLight
+                        ? 'bg-[#291C0E] text-[#E1D4C2] border-[#6E473B] font-bold'
+                        : 'bg-[#E1D4C2] text-[#291C0E] border-[#BEB5A9] font-bold'
+                      : isLight
+                      ? 'bg-[#E1D4C2] text-[#291C0E] border-[#A78D78]'
+                      : 'bg-[#291C0E] text-[#E1D4C2] border-[#A78D78]'
                   }`}
                 >
-                  Main Putih
+                  Putih
                 </button>
                 <button
                   type="button"
                   onClick={() => handleStartBotGame('b')}
-                  className={`py-1.5 px-2 rounded-lg text-xs font-medium border transition-colors whitespace-nowrap ${
+                  className={`py-1.5 px-2 rounded-lg text-xs font-semibold border transition-colors whitespace-nowrap ${
                     botPlayerColor === 'b'
-                      ? 'bg-[#38251C] text-[#C7A66A] border-[#C7A66A]'
-                      : 'bg-[#171513] text-[#E7D5B5] border-[#38251C]'
+                      ? isLight
+                        ? 'bg-[#291C0E] text-[#E1D4C2] border-[#6E473B] font-bold'
+                        : 'bg-[#E1D4C2] text-[#291C0E] border-[#BEB5A9] font-bold'
+                      : isLight
+                      ? 'bg-[#E1D4C2] text-[#291C0E] border-[#A78D78]'
+                      : 'bg-[#291C0E] text-[#E1D4C2] border-[#A78D78]'
                   }`}
                 >
-                  Main Hitam
+                  Hitam
                 </button>
                 <button
                   type="button"
                   onClick={() => handleStartBotGame('random')}
-                  className="py-1.5 px-2 rounded-lg text-xs font-medium bg-[#171513] text-[#E7D5B5] border border-[#38251C] hover:border-[#79543A] transition-colors whitespace-nowrap"
+                  className={`py-1.5 px-2 rounded-lg text-xs font-semibold border transition-colors whitespace-nowrap ${
+                    isLight
+                      ? 'bg-[#E1D4C2] text-[#291C0E] border-[#A78D78] hover:bg-[#A78D78]'
+                      : 'bg-[#291C0E] text-[#E1D4C2] border-[#A78D78] hover:bg-[#A78D78] hover:text-[#291C0E]'
+                  }`}
                 >
-                  Sisi Acak
+                  Acak
                 </button>
                 <button
                   type="button"
                   disabled={botThinking || hintLoading || localEval.isAutomaticGameOver}
                   onClick={handleRequestHint}
-                  className="flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg text-xs font-semibold bg-[#1E3A5F] text-[#38BDF8] border border-[#38BDF8]/50 hover:bg-[#254975] disabled:opacity-40 transition-colors whitespace-nowrap"
+                  className="flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg text-xs font-bold bg-[#6E473B] text-[#E1D4C2] border border-[#291C0E] hover:bg-[#291C0E] disabled:opacity-40 transition-colors whitespace-nowrap"
                   title="Tampilkan Saran Langkah Terbaik"
                 >
                   <Lightbulb className="w-3.5 h-3.5" />
@@ -1640,41 +1871,53 @@ export default function ClassicChessApp() {
 
               {/* Tactical Hint Explanation Card */}
               {hintResult && (
-                <div className="p-2.5 rounded-lg bg-[#132235] border border-[#38BDF8]/60 text-xs text-[#E7D5B5] flex flex-col gap-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-[#38BDF8]">
+                <div
+                  className={`p-3 rounded-lg border-2 text-xs flex flex-col gap-1.5 ${
+                    isLight
+                      ? 'bg-[#E1D4C2] border-[#6E473B] text-[#291C0E]'
+                      : 'bg-[#291C0E] border-[#E1D4C2] text-[#E1D4C2]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold">
                       Saran Taktis: {hintResult.san} ({hintResult.from} → {hintResult.to})
                     </span>
                     <button
                       type="button"
                       onClick={() => executeValidatedMove(hintResult.from, hintResult.to)}
-                      className="px-2 py-0.5 rounded bg-[#38BDF8] text-[#14110F] font-semibold text-[11px] hover:bg-[#7dd3fc] whitespace-nowrap"
+                      className="px-2.5 py-1 rounded-md bg-[#6E473B] text-[#E1D4C2] border border-[#E1D4C2] font-bold text-[11px] hover:bg-[#A78D78] hover:text-[#291C0E] whitespace-nowrap"
                     >
                       Jalankan
                     </button>
                   </div>
-                  <p className="text-[11px] text-[#F2E9DC]/90 leading-relaxed">
+                  <p className="text-[11px] leading-relaxed">
                     {hintResult.explanation}
                   </p>
                 </div>
               )}
             </div>
           ) : activeTab === 'local' ? (
-            <div className="bg-[#221D19] border border-[#38251C] rounded-xl p-4 shrink-0">
-              <div className="flex items-center justify-between mb-2.5">
+            <div
+              className={`rounded-xl border-2 p-4 shrink-0 transition-colors ${
+                isLight
+                  ? 'bg-[#BEB5A9] border-[#A78D78] text-[#291C0E]'
+                  : 'bg-[#6E473B] border-[#A78D78] text-[#E1D4C2]'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-2.5 pb-2 border-b border-[#A78D78]">
                 <div className="flex items-center gap-1.5">
-                  <BookOpen className="w-4 h-4 text-[#C7A66A]" />
-                  <h3 className="text-sm font-semibold text-[#F2E9DC]">
-                    Skenario Uji Duel & Aturan Catur
+                  <BookOpen className="w-4 h-4" />
+                  <h3 className="text-sm font-bold font-serif">
+                    Latihan & Uji Aturan Catur
                   </h3>
                 </div>
 
-                <label className="inline-flex items-center gap-1.5 text-xs text-[#B5A695] cursor-pointer select-none">
+                <label className="inline-flex items-center gap-1.5 text-xs font-semibold cursor-pointer select-none">
                   <input
                     type="checkbox"
                     checked={autoFlipLocal}
                     onChange={(e) => setAutoFlipLocal(e.target.checked)}
-                    className="rounded border-[#79543A] bg-[#171513] text-[#C7A66A]"
+                    className="rounded border-[#291C0E]"
                   />
                   <span>Putar Otomatis</span>
                 </label>
@@ -1686,10 +1929,14 @@ export default function ClassicChessApp() {
                     key={preset.id}
                     type="button"
                     onClick={() => handleLoadLocalPreset(preset)}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors whitespace-nowrap ${
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors whitespace-nowrap ${
                       activePresetId === preset.id
-                        ? 'bg-[#38251C] text-[#C7A66A] border-[#C7A66A]'
-                        : 'bg-[#171513] text-[#E7D5B5]/90 border-[#38251C] hover:border-[#79543A]'
+                        ? isLight
+                          ? 'bg-[#6E473B] text-[#E1D4C2] border-[#291C0E] font-bold'
+                          : 'bg-[#E1D4C2] text-[#291C0E] border-[#BEB5A9] font-bold'
+                        : isLight
+                        ? 'bg-[#E1D4C2] text-[#291C0E] border-[#A78D78] hover:bg-[#A78D78]'
+                        : 'bg-[#291C0E] text-[#E1D4C2] border-[#A78D78] hover:bg-[#A78D78] hover:text-[#291C0E]'
                     }`}
                   >
                     {preset.label}
@@ -1697,7 +1944,11 @@ export default function ClassicChessApp() {
                 ))}
               </div>
 
-              <p className="text-xs text-[#B5A695] mt-2.5 leading-relaxed">
+              <p
+                className={`text-xs mt-2.5 leading-relaxed ${
+                  isLight ? 'text-[#6E473B]' : 'text-[#BEB5A9]'
+                }`}
+              >
                 {RULE_TEST_PRESETS.find((p) => p.id === activePresetId)?.description}
               </p>
             </div>
@@ -1730,12 +1981,13 @@ export default function ClassicChessApp() {
                 onCancelRoom={handleCancelWaitingRoom}
                 onSendChat={handleSendChat}
                 errorBanner={mpErrorBanner}
+                themeMode={themeMode}
               />
             </div>
           )}
 
           {/* Algebraic Move History & Resign/Draw/Undo Panel */}
-          <div className="flex-1 min-h-[250px]">
+          <div className="flex-1 min-h-[240px]">
             <MoveHistoryPanel
               moves={currentMoves}
               fen={currentFen}
@@ -1752,7 +2004,8 @@ export default function ClassicChessApp() {
                 activeTab === 'bot'
                   ? handleStartBotGame(botPlayerColor)
                   : handleLoadLocalPreset(
-                      RULE_TEST_PRESETS.find((p) => p.id === activePresetId) || RULE_TEST_PRESETS[0]
+                      RULE_TEST_PRESETS.find((p) => p.id === activePresetId) ||
+                        RULE_TEST_PRESETS[0]
                     )
               }
               canClaimDraw={canClaimCurrentDraw}
@@ -1763,6 +2016,7 @@ export default function ClassicChessApp() {
               onOfferDraw={handleOfferDraw}
               onRespondDraw={handleRespondDraw}
               onResign={handleResign}
+              themeMode={themeMode}
             />
           </div>
         </div>
@@ -1772,6 +2026,7 @@ export default function ClassicChessApp() {
       {pendingPromotion && (
         <PromotionModal
           color={pendingPromotion.color}
+          themeMode={themeMode}
           onSelect={(piece) => {
             const { from, to } = pendingPromotion;
             setPendingPromotion(null);
@@ -1780,6 +2035,17 @@ export default function ClassicChessApp() {
           onCancel={() => setPendingPromotion(null)}
         />
       )}
+
+      {/* Step-by-Step Interactive User Guide Modal */}
+      <UserGuideModal
+        isOpen={showGuideModal}
+        onClose={() => setShowGuideModal(false)}
+        themeMode={themeMode}
+        onToggleTheme={toggleThemeMode}
+        isDesktopViewport={isDesktopViewport}
+        effectiveBoardMode={effectiveBoardMode}
+        onToggleDesktopBoardMode={toggleDesktopBoardMode}
+      />
     </div>
   );
 }

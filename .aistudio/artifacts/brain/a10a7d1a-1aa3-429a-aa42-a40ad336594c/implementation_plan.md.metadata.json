@@ -1,6 +1,6 @@
 {
-  "summary":  "Rencana implementasi pembaruan Ultra-Realistic Living 3D Chess Arena: mencakup Grand Chess Chamber 3D (perpustakaan/klub klasik), Karakter Bidak Hidup beranimasi dengan toggle Staunton, Sistem Duel Capture Sinematik, Mode Latihan Bot AI via Web Worker (Hint & Analisis Evaluasi), Penyempurnaan Room Privat/Publik, serta Pengaturan Kualitas Grafis (Low/Medium/High/Ultra).",
-  "updatedAt":  "2026-10-22T01:30:03.521298523Z",
+  "summary":  "Rencana implementasi optimasi performa PageSpeed & Mobile (pemisahan otomatis Papan Catur 2D ringan untuk Mobile/Tablet dan 3D dinamis untuk Desktop dengan tombol beralih 2D/3D), penyederhanaan tata letak responsif, sistem Tema Terang & Gelap Hangat menggunakan kelima warna palet (#291C0E, #6E473B, #A78D78, #BEB5A9, #E1D4C2) secara solid tanpa gradasi, serta Panel Panduan Ringkas dan Pop-up Panduan Interaktif.",
+  "updatedAt":  "2026-10-29T08:04:12.424774361Z",
   "requestFeedback":  true,
   "userFacing":  true
 }
